@@ -1143,6 +1143,26 @@ ${fileSnippets}`;
   };
 
   const handleOpenPreviewInNewTab = () => {
+    const fileCandidates = ["app/page.tsx", "app/page.jsx", "App.tsx", "App.jsx"];
+    const sourceFile = fileCandidates
+      .map((path) => files.find((file) => file.path === path)?.content ?? "")
+      .find(Boolean);
+
+    if (sourceFile) {
+      const srcDocMatch = sourceFile.match(/srcDoc=\{`([\s\S]*?)`\}/);
+      if (srcDocMatch?.[1]) {
+        const opened = window.open("", "_blank", "noopener,noreferrer");
+        if (!opened) {
+          toast.error("Popup blocked. Please allow popups for this site.");
+          return;
+        }
+        opened.document.open();
+        opened.document.write(srcDocMatch[1]);
+        opened.document.close();
+        return;
+      }
+    }
+
     const iframe = previewFrameRef.current?.querySelector("iframe");
     if (!iframe) {
       toast.error("Preview iframe not found");
