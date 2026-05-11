@@ -926,7 +926,12 @@ if (rootElement) {
 
     const activeProjectMode = activeProject?.mode ?? "chat";
     const debugMode = isDebugRequest(trimmed);
-    const nextMode = detectIntentMode(trimmed, activeProjectMode);
+    const hasImageAttachment = pendingAttachments.some(
+      (attachment) => attachment.kind === "image" && Boolean(attachment.dataUrl)
+    );
+    const nextMode = hasImageAttachment
+      ? "chat"
+      : detectIntentMode(trimmed, activeProjectMode);
 
     if (!activeProjectId) {
       const newProject = createProject(
@@ -1028,6 +1033,12 @@ if (rootElement) {
 
       if (debugMode) {
         chatMessages.unshift({ role: "system", content: buildDebugContext() });
+      } else if (hasImageAttachment) {
+        chatMessages.unshift({
+          role: "system",
+          content:
+            "You are assisting with image understanding. Carefully analyze every attached image alongside the user's text and answer based on both.",
+        });
       } else if (nextMode === "project") {
         chatMessages.unshift({ role: "system", content: buildProjectContext() });
       }
