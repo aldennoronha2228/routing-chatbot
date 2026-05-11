@@ -295,7 +295,7 @@ export default function Home() {
 
   const parseFileBlocks = (content: string) => {
     const results: VfsFile[] = [];
-    const regex = /FILE:\s*([^\n]+)\n```[^\n]*\n([\s\S]*?)```/g;
+    const regex = /FILE:\s*([^\n]+)\n\s*```[^\n]*\n([\s\S]*?)```/g;
     let match: RegExpExecArray | null;
     while ((match = regex.exec(content)) !== null) {
       const path = match[1]?.trim();
@@ -1011,36 +1011,35 @@ if (rootElement) {
       })
       .join("\n\n");
 
-    return `You are an AI web builder. Maintain and update the existing project files incrementally.
-  Respond in this exact order using plain text headings:
-  ARCHITECTURE
-  - Bullet summary of components, pages, data flow, and styling approach.
+    return `You are an AI website builder. Update the project incrementally and return code in a strict machine-readable format.
 
-  FILE MAP
-  - Tree of files you will create/update.
+STRICT RESPONSE CONTRACT (MANDATORY):
+- Return ONLY FILE blocks. No intro, no explanation, no headings, no markdown text outside file blocks.
+- Every block must follow this exact format:
+FILE: path/to/file.ext
+\`\`\`ext
+...full file content...
+\`\`\`
+- You may include multiple FILE blocks.
+- If you modify a file, return the FULL updated file.
+- If you add a file, include it fully.
+- Do NOT include "..." placeholders.
+- Do NOT output plain HTML without a FILE block.
 
-  BUILD STEPS
-  - Commands to run and how to preview.
+QUALITY REQUIREMENTS:
+- Build a complete, working, modern responsive website.
+- Use semantic HTML and accessible structure.
+- Ensure mobile-first layout (phone/tablet/desktop).
+- Keep styling consistent and production-ready.
+- If React/TSX is used, output valid TSX.
 
-  FILES
-  - Then output ONLY structured file blocks in this format (no markdown outside blocks after FILES):
-  FILE: path/to/file.tsx
-  \`\`\`tsx
-  code...
-  \`\`\`
+If uncertain, still output best-effort valid FILE blocks only.
 
-  STRICT OUTPUT RULES:
-  - After the FILES heading, output ONLY FILE blocks (no prose, no lists, no extra commentary).
-  - Every file you reference must be included as a full file block.
-  - If you are unsure, still return valid FILE blocks (do not answer with plain text).
+Current files:
+${fileList}
 
-  You MUST return a complete, working, multi-file output:
-  - Include every file that is required for the change to run.
-  - If you reference a new component or stylesheet, include it in the response.
-  - If you modify a file, include the full updated file contents.
-  - Do NOT omit dependencies or "assume existing" files.
-
-  Current files:\n${fileList}\n\nRelevant snippets:\n${fileSnippets}`;
+Relevant snippets:
+${fileSnippets}`;
   };
 
   const handlePreviewRefresh = () => {
