@@ -166,9 +166,10 @@
     top: 0;
     left: 0;
     right: 0;
-    display: flex;
+    z-index: 5;
+    display: grid;
+    grid-template-columns: 1fr auto;
     align-items: center;
-    justify-content: space-between;
     gap: 0.5rem;
     padding: 0.45rem 0.7rem;
     border-bottom: 1px solid color-mix(in oklch, var(--border) 75%, transparent);
@@ -181,13 +182,21 @@
   }
 
   .code-block-actions {
-    display: inline-flex;
+    display: inline-flex !important;
     align-items: center;
     gap: 0.35rem;
+    margin-left: auto;
+    position: relative;
+    z-index: 6;
   }
 
   .code-copy-btn,
   .code-download-btn {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    visibility: visible !important;
+    opacity: 1 !important;
     border: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
     border-radius: 0.5rem;
     background: color-mix(in oklch, var(--background) 80%, transparent);
