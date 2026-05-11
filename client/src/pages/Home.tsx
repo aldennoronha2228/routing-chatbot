@@ -1423,6 +1423,7 @@ if (rootElement) {
     }
     const merged = Array.from(new Set([...models, ...additions]));
     setModels(merged);
+    setSelectedModel(additions[0] ?? merged[0] ?? MODELS[0]);
     setModelsInput("");
     toast.success("Models updated");
   };

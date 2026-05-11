@@ -3,16 +3,6 @@ import { z } from "zod";
 
 const ROUTING_RUN_API_URL = "https://api.routing.run/v1";
 
-const ALLOWED_MODELS = [
-  "route/kimi-k2.5",
-  "route/glm-5-highspeed",
-  "route/glm-5.1",
-  "route/glm-5.1-precision",
-  "route/qwen3.5-9b",
-  "route/qwen3.5-397b-a17b",
-  "route/minimax-m2.5",
-];
-
 const chatRequestSchema = z.object({
   messages: z.array(
     z.object({
@@ -39,9 +29,7 @@ const chatRequestSchema = z.object({
       ]),
     })
   ),
-  model: z
-    .string()
-    .refine((model) => ALLOWED_MODELS.includes(model), `Model must be one of: ${ALLOWED_MODELS.join(", ")}`),
+  model: z.string().min(1, "Model is required"),
   apiKey: z.string().min(1, "API key is required"),
 });
 
