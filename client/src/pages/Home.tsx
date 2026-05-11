@@ -135,6 +135,11 @@ type VfsFile = {
   content: string;
 };
 
+type PreviewPayload = {
+  files: VfsFile[];
+  previewDevice: PreviewDevice;
+};
+
 export default function Home() {
   const createProject = (
     title = "Untitled Project",
@@ -180,7 +185,10 @@ export default function Home() {
     try {
       const raw = localStorage.getItem(PROJECTS_KEY);
       const parsed = raw ? (JSON.parse(raw) as Project[]) : [];
-      const requestedProjectId = new URLSearchParams(window.location.search).get("project");
+      const requestedRaw = new URLSearchParams(window.location.search).get("project");
+      const requestedProjectId = requestedRaw
+        ? requestedRaw.split("previewOnly=")[0].replace(/[?&]+$/, "")
+        : null;
       if (requestedProjectId && parsed.some((project) => project.id === requestedProjectId)) {
         return requestedProjectId;
       }
@@ -268,6 +276,33 @@ export default function Home() {
     const params = new URLSearchParams(window.location.search);
     const previewOnly = params.get("previewOnly") === "1";
     setPreviewOnlyMode(previewOnly);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const payloadKey = params.get("previewPayload");
+    if (!payloadKey) return;
+    const raw = localStorage.getItem(payloadKey);
+    if (!raw) return;
+    try {
+      const payload = JSON.parse(raw) as PreviewPayload;
+      if (Array.isArray(payload.files) && payload.files.length > 0) {
+        setFiles(payload.files);
+        setActiveFilePath(payload.files[0]?.path ?? "app/page.tsx");
+        setPreviewReady(true);
+        setConversationMode("project");
+        setPreviewTab("preview");
+        setArtifactOpen(true);
+      }
+      if (payload.previewDevice) {
+        setPreviewDevice(payload.previewDevice);
+      }
+    } catch (_error) {
+      // no-op
+    } finally {
+      localStorage.removeItem(payloadKey);
+    }
   }, []);
 
 
@@ -1169,12 +1204,20 @@ ${fileSnippets}`;
   };
 
   const handleOpenPreviewInNewTab = () => {
-    const currentUrl = new URL(window.location.href);
-    if (activeProjectId) {
+    const payloadKey = `routing_preview_payload_${Date.now()}`;
+    const payload: PreviewPayload = {
+      files,
+      previewDevice,
+    };
+    localStorage.setItem(payloadKey, JSON.stringify(payload));
+
+    const currentUrl = new URL(window.location.origin + window.location.pathname);
+    currentUrl.searchParams.set("previewOnly", "1");
+    currentUrl.searchParams.set("previewPayload", payloadKey);
+    if (activeProjectId && !activeProjectId.includes("previewOnly=")) {
       currentUrl.searchParams.set("project", activeProjectId);
     }
-    currentUrl.searchParams.set("previewOnly", "1");
-    currentUrl.searchParams.delete("openPreview");
+
     const opened = window.open(currentUrl.toString(), "_blank", "noopener,noreferrer");
     if (!opened) {
       toast.error("Popup blocked. Please allow popups for this site.");
