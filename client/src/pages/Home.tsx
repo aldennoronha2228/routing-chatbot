@@ -360,11 +360,31 @@ export default function Home() {
   const CHAT_INTENT_PATTERNS = [
     /\b(explain|what is|how does|why does|help me debug|debug|difference between|jwt|hooks?)\b/i,
   ];
+  const DEBUG_INTENT_PATTERNS = [
+    /\berror\b/i,
+    /\bexception\b/i,
+    /\bstack\s*trace\b/i,
+    /\btraceback\b/i,
+    /\bfailed\b/i,
+    /\bnot found\b/i,
+    /\bundefined\b/i,
+    /\bcannot\b/i,
+    /\bminified react error\b/i,
+    /\bTypeError\b|\bReferenceError\b|\bSyntaxError\b/i,
+    /\bERR_[A-Z0-9_]+\b/i,
+    /\bHTTP\s*[45]\d{2}\b/i,
+    /\bat\s.+\(.+\)/i,
+  ];
+
+  const isDebugRequest = (prompt: string) => {
+    return DEBUG_INTENT_PATTERNS.some((pattern) => pattern.test(prompt));
+  };
 
   const detectIntentMode = (
     prompt: string,
     existingMode: ConversationMode
   ): ConversationMode => {
+    if (isDebugRequest(prompt)) return "chat";
     if (existingMode === "project") return "project";
     if (PROJECT_INTENT_PATTERNS.some((pattern) => pattern.test(prompt))) {
       return "project";
@@ -745,6 +765,7 @@ if (rootElement) {
     }
 
     const activeProjectMode = activeProject?.mode ?? "chat";
+    const debugMode = isDebugRequest(trimmed);
     const nextMode = detectIntentMode(trimmed, activeProjectMode);
 
     if (!activeProjectId) {
@@ -794,7 +815,9 @@ if (rootElement) {
           content: m.content,
         }));
 
-      if (nextMode === "project") {
+      if (debugMode) {
+        chatMessages.unshift({ role: "system", content: buildDebugContext() });
+      } else if (nextMode === "project") {
         chatMessages.unshift({ role: "system", content: buildProjectContext() });
       }
 
@@ -1036,6 +1059,34 @@ QUALITY REQUIREMENTS:
 If uncertain, still output best-effort valid FILE blocks only.
 
 Current files:
+${fileList}
+
+Relevant snippets:
+${fileSnippets}`;
+  };
+
+  const buildDebugContext = () => {
+    const fileList = files.map((file) => `- ${file.path}`).join("\n");
+    const fileSnippets = files
+      .slice(0, 6)
+      .map((file) => {
+        const snippet = file.content.slice(0, 700);
+        return `FILE: ${file.path}\n${snippet}`;
+      })
+      .join("\n\n");
+
+    return `You are a senior debugging assistant.
+Goal: diagnose and fix the reported error with the most likely root cause first.
+
+Rules:
+- First provide: ROOT CAUSE (1-2 lines).
+- Then provide: FIX (minimal change set).
+- Then provide: VERIFICATION STEPS.
+- If code changes are needed, output exact patch-style snippets or complete file blocks.
+- Be specific to the provided error text. Do not generate a new unrelated website.
+- If information is missing, state assumptions clearly and continue with best-effort debugging.
+
+Current project files:
 ${fileList}
 
 Relevant snippets:
