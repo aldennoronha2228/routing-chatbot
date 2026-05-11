@@ -311,6 +311,8 @@ export default function Home() {
   });
   const [isStreaming, setIsStreaming] = useState(false);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
+  const [pendingFileUpdates, setPendingFileUpdates] = useState<VfsFile[]>([]);
+  const fileUpdateDebounceRef = useRef<NodeJS.Timeout | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const previewFrameRef = useRef<HTMLDivElement>(null);
@@ -352,6 +354,27 @@ export default function Home() {
       selectedModel,
       userPrompt: prompt,
     });
+
+  const flushPendingFileUpdates = () => {
+    if (fileUpdateDebounceRef.current) clearTimeout(fileUpdateDebounceRef.current);
+    if (pendingFileUpdates.length === 0) return;
+    setFiles((prev) => {
+      const map = new Map(prev.map((f) => [f.path, f]));
+      for (const file of pendingFileUpdates) map.set(file.path, file);
+      return Array.from(map.values());
+    });
+    setPendingFileUpdates([]);
+  };
+
+  const queueFileUpdate = (fileBlocks: VfsFile[]) => {
+    setPendingFileUpdates((current) => {
+      const map = new Map(current.map((f) => [f.path, f]));
+      for (const file of fileBlocks) map.set(file.path, file);
+      return Array.from(map.values());
+    });
+    if (fileUpdateDebounceRef.current) clearTimeout(fileUpdateDebounceRef.current);
+    fileUpdateDebounceRef.current = setTimeout(flushPendingFileUpdates, 150);
+  };
 
   useEffect(() => {
     if (!isMobile) {
@@ -549,45 +572,6 @@ export default function Home() {
       current.includes(path)
         ? current.filter((folderPath) => folderPath !== path)
         : [...current, path]
-    );
-  };
-
-  const renderFileTree = (node: FileTreeNode, depth = 0) => {
-    if (node.type === "folder") {
-      const isOpen = isFolderOpen(node.path);
-      return (
-        <div key={node.path}>
-          <button
-            type="button"
-            className="preview-tree-row preview-tree-folder"
-            style={{ paddingLeft: `${depth * 16}px` }}
-            onClick={() => toggleFolder(node.path)}
-          >
-            <span className="preview-tree-chevron" aria-hidden>
-              {isOpen ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
-            </span>
-            {isOpen ? <FolderOpen className="size-3" /> : <Folder className="size-3" />}
-            <span>{node.name}</span>
-          </button>
-          {isOpen &&
-            node.children.map((child) => renderFileTree(child, depth + 1))}
-        </div>
-      );
-    }
-
-    return (
-      <button
-        key={node.path}
-        type="button"
-        className={`preview-tree-row preview-tree-file ${
-          node.path === activeFile?.path ? "is-active" : ""
-        }`}
-        style={{ paddingLeft: `${depth * 16 + 18}px` }}
-        onClick={() => setActiveFilePath(node.path)}
-      >
-        <FileText className="size-3" />
-        <span>{node.name}</span>
-      </button>
     );
   };
 
@@ -906,6 +890,48 @@ if (rootElement) {
     return files.find((file) => file.path === activeFilePath) ?? files[0];
   }, [files, activeFilePath]);
 
+  const renderFileTree = useMemo(
+    () => (node: FileTreeNode, depth = 0): React.ReactNode => {
+      if (node.type === "folder") {
+        const isOpen = isFolderOpen(node.path);
+        return (
+          <div key={node.path}>
+            <button
+              type="button"
+              className="preview-tree-row preview-tree-folder"
+              style={{ paddingLeft: `${depth * 16}px` }}
+              onClick={() => toggleFolder(node.path)}
+            >
+              <span className="preview-tree-chevron" aria-hidden>
+                {isOpen ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+              </span>
+              {isOpen ? <FolderOpen className="size-3" /> : <Folder className="size-3" />}
+              <span>{node.name}</span>
+            </button>
+            {isOpen &&
+              node.children.map((child) => (renderFileTree as any)(child, depth + 1))}
+          </div>
+        );
+      }
+
+      return (
+        <button
+          key={node.path}
+          type="button"
+          className={`preview-tree-row preview-tree-file ${
+            node.path === activeFile?.path ? "is-active" : ""
+          }`}
+          style={{ paddingLeft: `${depth * 16 + 18}px` }}
+          onClick={() => setActiveFilePath(node.path)}
+        >
+          <FileText className="size-3" />
+          <span>{node.name}</span>
+        </button>
+      );
+    },
+    [isFolderOpen, toggleFolder, activeFile?.path, setActiveFilePath]
+  );
+
   const hasPreviewAvailable = useMemo(() => {
     if (previewReady) return true;
     if (files.length > DEFAULT_FILES.length) return true;
@@ -1064,17 +1090,13 @@ if (rootElement) {
 
     if (!shouldCreateArtifact(fileBlocks)) return;
 
+    flushPendingFileUpdates();
     setFiles((prev) => {
       const map = new Map(prev.map((file) => [file.path, file]));
-      let changed = false;
       fileBlocks.forEach((file) => {
-        const existing = map.get(file.path);
-        if (!existing || existing.content !== file.content) {
-          changed = true;
-        }
         map.set(file.path, file);
       });
-      return changed ? Array.from(map.values()) : prev;
+      return Array.from(map.values());
     });
     setActiveFilePath(fileBlocks[0].path);
     setPreviewReady(true);
@@ -1090,6 +1112,12 @@ if (rootElement) {
   const sandpackFiles = useMemo(() => {
     return buildSandpackFiles(files);
   }, [files]);
+
+  useEffect(() => {
+    return () => {
+      if (fileUpdateDebounceRef.current) clearTimeout(fileUpdateDebounceRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -2599,7 +2627,7 @@ ${fileSnippets}`;
                           <aside className="preview-files">
                             <div className="preview-files-header">Files</div>
                             <div className="preview-tree">
-                              {renderFileTree(buildFileTree(files))}
+                              {useMemo(() => renderFileTree(buildFileTree(files)), [files, renderFileTree])}
                             </div>
                           </aside>
                           <div className="preview-code-editor">

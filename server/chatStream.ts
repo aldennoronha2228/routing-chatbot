@@ -105,17 +105,25 @@ export function registerChatStreamRoutes(app: Router) {
               continue;
             }
 
-            const ocrText = await extractTextFromDataUrl(imageUrl);
-            if (ocrText) {
-              parts.push({
-                type: "text",
-                text: `Extracted text from attached image:\n\n${ocrText}`,
-              });
-            } else {
+            try {
+              const ocrText = await extractTextFromDataUrl(imageUrl);
+              if (ocrText) {
+                parts.push({
+                  type: "text",
+                  text: `Extracted text from attached image:\n\n${ocrText}`,
+                });
+              } else {
+                parts.push({
+                  type: "text",
+                  text:
+                    "An attached image was provided, but OCR could not read any text from it. Please inspect the image manually if needed.",
+                });
+              }
+            } catch (err) {
               parts.push({
                 type: "text",
                 text:
-                  "An attached image was provided, but OCR could not read any text from it. Please inspect the image manually if needed.",
+                  "An attached image was provided, but OCR processing failed. Please inspect the image manually if needed.",
               });
             }
           }
