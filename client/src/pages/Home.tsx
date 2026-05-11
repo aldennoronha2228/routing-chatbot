@@ -1327,7 +1327,7 @@ if (rootElement) {
                                       </div>
                                     ) : (
                                       <div className="chat-prose prose prose-sm dark:prose-invert max-w-none">
-                                        <Streamdown>{message.content}</Streamdown>
+                                        <Streamdown skipHtml>{message.content}</Streamdown>
                                         {showCursor && (
                                           <span className="streaming-cursor" aria-hidden />
                                         )}
