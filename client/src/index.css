@@ -626,6 +626,15 @@
     height: 100% !important;
   }
 
+  .preview-frame:not(.is-mobile) .sp-preview-container,
+  .preview-frame:not(.is-mobile) .sp-preview-iframe {
+    min-width: 100% !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    flex: 1 1 auto !important;
+    transform: none !important;
+  }
+
   .sandpack-console {
     flex: 0 0 140px;
     height: 140px;

@@ -374,6 +374,16 @@ export default function Home() {
     /\bERR_[A-Z0-9_]+\b/i,
     /\bHTTP\s*[45]\d{2}\b/i,
     /\bat\s.+\(.+\)/i,
+    /\bbug\b/i,
+    /\bissue\b/i,
+    /\bfix\b/i,
+    /\bcorrect\b/i,
+    /\bmistake\b/i,
+    /\bbroken\b/i,
+    /\bnot working\b/i,
+    /\bdoesn'?t work\b/i,
+    /\bcrash(ed)?\b/i,
+    /\bfail(?:ed|ing)?\b/i,
   ];
 
   const isDebugRequest = (prompt: string) => {
@@ -1076,15 +1086,24 @@ ${fileSnippets}`;
       .join("\n\n");
 
     return `You are a senior debugging assistant.
-Goal: diagnose and fix the reported error with the most likely root cause first.
+Goal: diagnose and FIX the reported bug/error with concrete changes.
+
+Response format (mandatory):
+1) ROOT CAUSE
+2) FIX PLAN
+3) CODE FIXES
+4) VERIFICATION
 
 Rules:
-- First provide: ROOT CAUSE (1-2 lines).
-- Then provide: FIX (minimal change set).
-- Then provide: VERIFICATION STEPS.
-- If code changes are needed, output exact patch-style snippets or complete file blocks.
-- Be specific to the provided error text. Do not generate a new unrelated website.
-- If information is missing, state assumptions clearly and continue with best-effort debugging.
+- Be specific to the reported error/bug.
+- Do not generate a new unrelated website.
+- Prefer minimal targeted fixes over rewrites.
+- In CODE FIXES, include complete FILE blocks for changed files:
+FILE: path/to/file.ext
+\`\`\`ext
+...full updated file...
+\`\`\`
+- If uncertain, state assumptions and still provide the best fix.
 
 Current project files:
 ${fileList}
@@ -1775,6 +1794,11 @@ ${fileSnippets}`;
                                 className="sandpack-preview"
                                 showOpenInCodeSandbox={false}
                                 showRefreshButton={false}
+                                viewportSize={
+                                  previewDevice === "mobile"
+                                    ? { width: 390, height: 844 }
+                                    : "auto"
+                                }
                               />
                             </SandpackLayout>
                           </SandpackProvider>
@@ -1889,6 +1913,11 @@ ${fileSnippets}`;
                             className="sandpack-preview"
                             showOpenInCodeSandbox={false}
                             showRefreshButton={false}
+                            viewportSize={
+                              previewDevice === "mobile"
+                                ? { width: 390, height: 844 }
+                                : "auto"
+                            }
                           />
                         </SandpackLayout>
                       </SandpackProvider>
