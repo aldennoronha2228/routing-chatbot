@@ -484,6 +484,13 @@ if (rootElement) {
     return files.find((file) => file.path === activeFilePath) ?? files[0];
   }, [files, activeFilePath]);
 
+  const hasPreviewAvailable = useMemo(() => {
+    if (previewReady) return true;
+    if (files.length > DEFAULT_FILES.length) return true;
+    const baseline = new Map(DEFAULT_FILES.map((file) => [file.path, file.content]));
+    return files.some((file) => baseline.get(file.path) !== file.content);
+  }, [previewReady, files]);
+
 
   const projectItems = useMemo(() => {
     return projects.slice(0, 10);
@@ -1320,10 +1327,10 @@ if (rootElement) {
               </div>
             </div>
               <div className="flex items-center gap-2">
-              {isProjectMode && previewReady && !artifactOpen && (
+              {isProjectMode && hasPreviewAvailable && !artifactOpen && (
                 <span className="preview-ready">Preview ready</span>
               )}
-              {isProjectMode && (
+              {(isProjectMode || hasPreviewAvailable) && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -1335,7 +1342,7 @@ if (rootElement) {
                     }
                     setArtifactOpen((value) => !value);
                   }}
-                  disabled={!previewReady}
+                  disabled={!hasPreviewAvailable}
                 >
                   {isMobile ? "Open preview" : artifactOpen ? "Close preview" : "Open preview"}
                 </Button>
@@ -1484,7 +1491,7 @@ if (rootElement) {
                 </ScrollArea>
               </div>
 
-              {isMobile && isProjectMode && previewReady && (
+              {isMobile && (isProjectMode || hasPreviewAvailable) && (
                 <div className="mobile-workspace-switcher">
                   <button
                     className={mobileWorkspaceTab === "chat" ? "is-active" : ""}
@@ -1594,7 +1601,7 @@ if (rootElement) {
             </section>
 
             <AnimatePresence>
-              {!isMobile && isProjectMode && artifactOpen && previewReady && (
+              {!isMobile && artifactOpen && hasPreviewAvailable && (
                 <motion.section
                   className="preview-pane"
                   initial={{ opacity: 0, x: 20 }}
@@ -1737,7 +1744,7 @@ if (rootElement) {
           </div>
 
           <AnimatePresence>
-            {isMobile && mobileWorkspaceOpen && isProjectMode && previewReady && (
+            {isMobile && mobileWorkspaceOpen && hasPreviewAvailable && (
               <motion.section
                 className="mobile-workspace-overlay"
                 initial={{ opacity: 0, y: 24 }}
