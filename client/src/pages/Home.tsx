@@ -40,11 +40,14 @@ import {
 import { Streamdown } from "streamdown";
 import {
   ArrowUpRight,
+  ChevronLeft,
+  Monitor,
   MessageSquare,
   Paperclip,
   Plus,
   Send,
   Settings,
+  Smartphone,
   Square,
   Sparkles,
   Trash2,
@@ -223,12 +226,23 @@ export default function Home() {
   const previewFrameRef = useRef<HTMLDivElement>(null);
   const lastArtifactAppliedMessageIdRef = useRef<string | null>(null);
   const isMobile = useIsMobile();
+  const [mobileWorkspaceOpen, setMobileWorkspaceOpen] = useState(false);
+  const [mobileWorkspaceTab, setMobileWorkspaceTab] = useState<"chat" | "preview" | "code">(
+    "chat"
+  );
 
   const modelLabel = useMemo(
     () => selectedModel.replace("route/", ""),
     [selectedModel]
   );
   const isProjectMode = conversationMode === "project";
+
+  useEffect(() => {
+    if (!isMobile) {
+      setMobileWorkspaceOpen(false);
+      setMobileWorkspaceTab("chat");
+    }
+  }, [isMobile]);
 
 
   const parseModelsInput = (value: string) => {
@@ -624,12 +638,12 @@ if (rootElement) {
     setPreviewReady(true);
     setPreviewTab("preview");
     setConversationMode("project");
-    setArtifactOpen(true);
+    setArtifactOpen(!isMobile);
     lastArtifactAppliedMessageIdRef.current = lastAssistant.id;
     setArtifactTitle("Website Ready");
     setArtifactSubtitle("Generated project");
     setArtifactMessageId(lastAssistant.id);
-  }, [messages, isStreaming]);
+  }, [messages, isStreaming, isMobile]);
 
   const sandpackFiles = useMemo(() => {
     return buildSandpackFiles(files);
@@ -1313,10 +1327,17 @@ if (rootElement) {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setArtifactOpen((value) => !value)}
+                  onClick={() => {
+                    if (isMobile) {
+                      setMobileWorkspaceTab("preview");
+                      setMobileWorkspaceOpen(true);
+                      return;
+                    }
+                    setArtifactOpen((value) => !value);
+                  }}
                   disabled={!previewReady}
                 >
-                  {artifactOpen ? "Close preview" : "Open preview"}
+                  {isMobile ? "Open preview" : artifactOpen ? "Close preview" : "Open preview"}
                 </Button>
               )}
             </div>
@@ -1325,7 +1346,7 @@ if (rootElement) {
           <div
             className={`ai-ide-layout ${
               isProjectMode && artifactOpen ? "is-open" : "is-closed"
-            }`}
+            } ${isMobile ? "is-mobile-layout" : ""}`}
           >
             <section className="chat-pane">
               <div className="chat-scroll" ref={scrollAreaRef}>
@@ -1463,6 +1484,38 @@ if (rootElement) {
                 </ScrollArea>
               </div>
 
+              {isMobile && isProjectMode && previewReady && (
+                <div className="mobile-workspace-switcher">
+                  <button
+                    className={mobileWorkspaceTab === "chat" ? "is-active" : ""}
+                    onClick={() => {
+                      setMobileWorkspaceTab("chat");
+                      setMobileWorkspaceOpen(false);
+                    }}
+                  >
+                    Chat
+                  </button>
+                  <button
+                    className={mobileWorkspaceTab === "preview" ? "is-active" : ""}
+                    onClick={() => {
+                      setMobileWorkspaceTab("preview");
+                      setMobileWorkspaceOpen(true);
+                    }}
+                  >
+                    Preview
+                  </button>
+                  <button
+                    className={mobileWorkspaceTab === "code" ? "is-active" : ""}
+                    onClick={() => {
+                      setMobileWorkspaceTab("code");
+                      setMobileWorkspaceOpen(true);
+                    }}
+                  >
+                    Code
+                  </button>
+                </div>
+              )}
+
               <div className="chat-input-bar">
                 <div className="chat-input-wrap flex w-full flex-col gap-3">
                   <div className="chat-input-container flex flex-col gap-3 rounded-2xl border border-border/70 bg-card/70 p-3 shadow-lg shadow-black/10 transition">
@@ -1541,7 +1594,7 @@ if (rootElement) {
             </section>
 
             <AnimatePresence>
-              {isProjectMode && artifactOpen && previewReady && (
+              {!isMobile && isProjectMode && artifactOpen && previewReady && (
                 <motion.section
                   className="preview-pane"
                   initial={{ opacity: 0, x: 20 }}
@@ -1682,6 +1735,112 @@ if (rootElement) {
               )}
             </AnimatePresence>
           </div>
+
+          <AnimatePresence>
+            {isMobile && mobileWorkspaceOpen && isProjectMode && previewReady && (
+              <motion.section
+                className="mobile-workspace-overlay"
+                initial={{ opacity: 0, y: 24 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 24 }}
+                transition={{ duration: 0.2, ease: "easeOut" }}
+              >
+                <div className="mobile-workspace-header">
+                  <button
+                    className="mobile-workspace-back"
+                    onClick={() => {
+                      setMobileWorkspaceOpen(false);
+                      setMobileWorkspaceTab("chat");
+                    }}
+                  >
+                    <ChevronLeft className="size-4" />
+                    Back to chat
+                  </button>
+                  <div className="mobile-workspace-tabs">
+                    <button
+                      className={mobileWorkspaceTab === "preview" ? "is-active" : ""}
+                      onClick={() => setMobileWorkspaceTab("preview")}
+                    >
+                      <Smartphone className="size-3.5" />
+                      Preview
+                    </button>
+                    <button
+                      className={mobileWorkspaceTab === "code" ? "is-active" : ""}
+                      onClick={() => setMobileWorkspaceTab("code")}
+                    >
+                      <Monitor className="size-3.5" />
+                      Code
+                    </button>
+                  </div>
+                </div>
+                <div className="mobile-workspace-body">
+                  {mobileWorkspaceTab === "code" ? (
+                    <div className="mobile-code-view">
+                      <div className="mobile-file-strip">
+                        {files.map((file) => (
+                          <button
+                            key={file.path}
+                            className={file.path === activeFile?.path ? "is-active" : ""}
+                            onClick={() => setActiveFilePath(file.path)}
+                          >
+                            {file.path}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="mobile-code-actions">
+                        <span>{(activeFile?.path && getLanguageForFile(activeFile.path).toUpperCase()) || "CODE"}</span>
+                        <button onClick={handleCopyPreviewCode}>Copy</button>
+                      </div>
+                      <pre className="mobile-code-pre">
+                        <code>{activeFile?.content || "No code yet."}</code>
+                      </pre>
+                    </div>
+                  ) : (
+                    <div
+                      ref={previewFrameRef}
+                      className={`preview-frame ${
+                        previewDevice === "mobile" ? "is-mobile" : ""
+                      }`}
+                    >
+                      <SandpackProvider
+                        key={previewRefreshKey}
+                        template="react-ts"
+                        files={sandpackFiles}
+                        customSetup={{
+                          entry: "/index.tsx",
+                          dependencies: {
+                            react: "^19.2.1",
+                            "react-dom": "^19.2.1",
+                            "framer-motion": "^12.23.22",
+                            "lucide-react": "^0.453.0",
+                            "class-variance-authority": "^0.7.1",
+                            clsx: "^2.1.1",
+                            "tailwind-merge": "^3.3.1",
+                            three: "^0.179.1",
+                            "@react-three/fiber": "^9.3.0",
+                            "@react-three/drei": "^10.0.8",
+                          },
+                        }}
+                        options={{
+                          recompileMode: "immediate",
+                          recompileDelay: 200,
+                          autorun: true,
+                        }}
+                      >
+                        <SandpackLayout className="sandpack-shell">
+                          <SandpackPreview
+                            className="sandpack-preview"
+                            showOpenInCodeSandbox={false}
+                            showRefreshButton={false}
+                          />
+                        </SandpackLayout>
+                      </SandpackProvider>
+                    </div>
+                  )}
+                </div>
+              </motion.section>
+            )}
+          </AnimatePresence>
         </SidebarInset>
       </div>
     </SidebarProvider>
