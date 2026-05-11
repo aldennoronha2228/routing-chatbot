@@ -289,7 +289,51 @@ export default function Home() {
         results.push({ path, content: code });
       }
     }
-    return results;
+
+    if (results.length > 0) {
+      return results;
+    }
+
+    const fallbackBlocks: VfsFile[] = [];
+    const fenceRegex = /```([\w-]+)?\n([\s\S]*?)```/g;
+    let fenceMatch: RegExpExecArray | null;
+    while ((fenceMatch = fenceRegex.exec(content)) !== null) {
+      const language = (fenceMatch[1] ?? "").toLowerCase();
+      const code = fenceMatch[2]?.trim() ?? "";
+      if (!code) continue;
+
+      if (language === "html" && code.includes("<html")) {
+        const escaped = code
+          .replace(/\\/g, "\\\\")
+          .replace(/`/g, "\\`")
+          .replace(/\$\{/g, "\\${");
+        fallbackBlocks.push({
+          path: "app/page.tsx",
+          content: `export default function Page() {
+  return (
+    <iframe
+      title="Generated Preview"
+      srcDoc={\`${escaped}\`}
+      style={{ width: "100%", minHeight: "100vh", border: "0" }}
+    />
+  );
+}
+`,
+        });
+        continue;
+      }
+
+      if (["tsx", "jsx", "typescript", "javascript", "js", "ts"].includes(language)) {
+        fallbackBlocks.push({ path: "app/page.tsx", content: code });
+        continue;
+      }
+
+      if (language === "css") {
+        fallbackBlocks.push({ path: "styles/global.css", content: code });
+      }
+    }
+
+    return fallbackBlocks;
   };
 
   const PROJECT_INTENT_PATTERNS = [
@@ -317,7 +361,7 @@ export default function Home() {
   };
 
   const shouldCreateArtifact = (fileBlocks: VfsFile[]) => {
-    if (fileBlocks.length < 2) return false;
+    if (fileBlocks.length === 0) return false;
     const paths = fileBlocks.map((file) => file.path.toLowerCase());
     const hasReactOrPage = paths.some((path) =>
       [".tsx", ".jsx", "app/page", "components/"].some((needle) =>
@@ -607,11 +651,17 @@ if (rootElement) {
       const header = document.createElement("div");
       header.className = "code-block-header";
       header.textContent = languageLabel.toUpperCase();
+      const actions = document.createElement("div");
+      actions.className = "code-block-actions";
 
       const copyButton = document.createElement("button");
       copyButton.type = "button";
       copyButton.className = "code-copy-btn";
       copyButton.textContent = "Copy";
+      const downloadButton = document.createElement("button");
+      downloadButton.type = "button";
+      downloadButton.className = "code-download-btn";
+      downloadButton.textContent = "Download";
 
       copyButton.addEventListener("click", async () => {
         const text = code?.textContent ?? "";
@@ -633,7 +683,22 @@ if (rootElement) {
         }
       });
 
-      header.appendChild(copyButton);
+      downloadButton.addEventListener("click", () => {
+        const text = code?.textContent ?? "";
+        if (!text) return;
+        const ext = languageLabel === "code" ? "txt" : languageLabel;
+        const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `snippet.${ext}`;
+        a.click();
+        URL.revokeObjectURL(url);
+      });
+
+      actions.appendChild(downloadButton);
+      actions.appendChild(copyButton);
+      header.appendChild(actions);
       pre.prepend(header);
       pre.setAttribute("data-code-enhanced", "true");
     });

@@ -154,6 +154,54 @@
     filter: saturate(1.1);
   }
 
+  .chat-prose pre {
+    position: relative;
+    padding-top: 2.7rem;
+  }
+
+  .code-block-header {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.45rem 0.7rem;
+    border-bottom: 1px solid color-mix(in oklch, var(--border) 75%, transparent);
+    background: color-mix(in oklch, var(--card) 75%, transparent);
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: color-mix(in oklch, var(--foreground) 72%, white 28%);
+  }
+
+  .code-block-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .code-copy-btn,
+  .code-download-btn {
+    border: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
+    border-radius: 0.5rem;
+    background: color-mix(in oklch, var(--background) 80%, transparent);
+    color: color-mix(in oklch, var(--foreground) 78%, white 22%);
+    font-size: 0.66rem;
+    line-height: 1;
+    padding: 0.32rem 0.5rem;
+    transition: background 0.2s ease, border-color 0.2s ease;
+  }
+
+  .code-copy-btn:hover,
+  .code-download-btn:hover {
+    background: color-mix(in oklch, var(--primary) 22%, transparent);
+    border-color: color-mix(in oklch, var(--primary) 45%, transparent);
+  }
+
   .chat-prose pre code .token.comment,
   .chat-prose pre code .token.prolog,
   .chat-prose pre code .token.doctype,
