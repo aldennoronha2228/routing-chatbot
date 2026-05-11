@@ -1145,13 +1145,44 @@ ${fileSnippets}`;
   const handleOpenPreviewInNewTab = () => {
     const iframe = previewFrameRef.current?.querySelector("iframe");
     const previewUrl = iframe?.getAttribute("src");
+    const previewSrcDoc = iframe?.getAttribute("srcdoc");
 
-    if (!previewUrl || previewUrl === "about:blank") {
+    if (previewUrl && previewUrl !== "about:blank") {
+      const opened = window.open(previewUrl, "_blank", "noopener,noreferrer");
+      if (!opened) {
+        toast.error("Popup blocked. Please allow popups for this site.");
+      }
+      return;
+    }
+
+    if (previewSrcDoc) {
+      const opened = window.open("", "_blank", "noopener,noreferrer");
+      if (!opened) {
+        toast.error("Popup blocked. Please allow popups for this site.");
+        return;
+      }
+      opened.document.open();
+      opened.document.write(previewSrcDoc);
+      opened.document.close();
+      return;
+    }
+
+    if (previewUrl === "about:blank") {
+      toast.error("Preview is still loading. Try Refresh, then Open tab.");
+      return;
+    }
+
+    if (!iframe) {
+      toast.error("Preview iframe not found");
+      return;
+    }
+
+    if (!previewUrl) {
       toast.error("Preview URL not ready yet");
       return;
     }
 
-    const opened = window.open(previewUrl, "_blank", "noopener,noreferrer");
+    const opened = window.open(previewUrl, "_blank");
     if (!opened) {
       toast.error("Popup blocked. Please allow popups for this site.");
     }
