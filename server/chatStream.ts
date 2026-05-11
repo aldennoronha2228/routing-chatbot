@@ -1,7 +1,24 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
+import { createWorker } from "tesseract.js";
 
 const ROUTING_RUN_API_URL = "https://api.routing.run/v1";
+
+let ocrWorkerPromise: Promise<Awaited<ReturnType<typeof createWorker>>> | null = null;
+
+const getOcrWorker = async () => {
+  if (!ocrWorkerPromise) {
+    ocrWorkerPromise = createWorker("eng");
+  }
+  return ocrWorkerPromise;
+};
+
+const extractTextFromDataUrl = async (dataUrl: string) => {
+  if (!dataUrl.startsWith("data:image/")) return "";
+  const worker = await getOcrWorker();
+  const result = await worker.recognize(dataUrl);
+  return (result?.data?.text || "").trim();
+};
 
 const ALLOWED_MODELS = [
   "route/kimi-k2.5",
@@ -17,7 +34,26 @@ const chatRequestSchema = z.object({
   messages: z.array(
     z.object({
       role: z.enum(["system", "user", "assistant"]),
-      content: z.string(),
+      content: z.union([
+        z.string(),
+        z.array(
+          z.union([
+            z.object({
+              type: z.literal("text"),
+              text: z.string(),
+            }),
+            z.object({
+              type: z.literal("image_url"),
+              image_url: z.union([
+                z.string(),
+                z.object({
+                  url: z.string(),
+                }),
+              ]),
+            }),
+          ])
+        ),
+      ]),
     })
   ),
   model: z.string().refine(
@@ -41,6 +77,74 @@ export function registerChatStreamRoutes(app: Router) {
       }
 
       const { messages, model, apiKey } = parsed.data;
+      const imageCount = messages.reduce((count, msg) => {
+        if (!Array.isArray(msg.content)) return count;
+        return (
+          count +
+          msg.content.filter((part) => part.type === "image_url").length
+        );
+      }, 0);
+      console.log(
+        `[chatStream] model=${model} messages=${messages.length} images=${imageCount}`
+      );
+
+      const normalizedMessages = await Promise.all(
+        messages.map(async (message) => {
+          if (!Array.isArray(message.content)) {
+            return message;
+          }
+
+          const parts = [] as Array<
+            | { type: "text"; text: string }
+            | { type: "image_url"; image_url: { url: string } }
+          >;
+
+          for (const part of message.content) {
+            if (part.type !== "image_url") {
+              parts.push(part as { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } });
+              continue;
+            }
+
+            const imageUrl = typeof part.image_url === "string" ? part.image_url : part.image_url.url;
+            if (!imageUrl.startsWith("data:image/")) {
+              parts.push({
+                type: "image_url",
+                image_url: { url: imageUrl },
+              });
+              continue;
+            }
+
+            const ocrText = await extractTextFromDataUrl(imageUrl);
+            if (ocrText) {
+              parts.push({
+                type: "text",
+                text: `Extracted text from attached image:\n\n${ocrText}`,
+              });
+            } else {
+              parts.push({
+                type: "text",
+                text:
+                  "An attached image was provided, but OCR could not read any text from it. Please inspect the image manually if needed.",
+              });
+            }
+          }
+
+          return {
+            ...message,
+            content: parts,
+          };
+        })
+      );
+
+      const normalizedImageCount = normalizedMessages.reduce((count, msg) => {
+        if (!Array.isArray(msg.content)) return count;
+        return count + msg.content.filter((part) => part.type === "image_url").length;
+      }, 0);
+      if (normalizedImageCount !== imageCount) {
+        console.log(
+          `[chatStream] normalized image payloads to text-only OCR parts; remaining images=${normalizedImageCount}`
+        );
+      }
 
       // Set streaming headers
       res.setHeader("Content-Type", "text/event-stream");
@@ -59,7 +163,7 @@ export function registerChatStreamRoutes(app: Router) {
           },
           body: JSON.stringify({
             model,
-            messages,
+            messages: normalizedMessages,
             stream: true,
             temperature: 0.7,
             top_p: 0.9,
@@ -69,6 +173,9 @@ export function registerChatStreamRoutes(app: Router) {
 
       if (!response.ok) {
         const errorText = await response.text();
+        console.error(
+          `[chatStream] upstream error ${response.status} ${response.statusText}: ${errorText}`
+        );
         res.status(response.status).json({
           error: `routing.run API error`,
           status: response.status,
@@ -78,6 +185,7 @@ export function registerChatStreamRoutes(app: Router) {
       }
 
       if (!response.body) {
+        console.error("[chatStream] upstream returned empty body");
         res.status(500).json({
           error: "No response body from routing.run API",
         });

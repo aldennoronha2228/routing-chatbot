@@ -56,6 +56,7 @@ import { toast } from "sonner";
 import { AnimatePresence, motion } from "framer-motion";
 import { useIsMobile } from "@/hooks/useMobile";
 import JSZip from "jszip";
+import { createWorker } from "tesseract.js";
 
 const MODELS = [
   "route/kimi-k2.5",
@@ -66,10 +67,25 @@ const MODELS = [
   "route/qwen3.5-397b-a17b",
   "route/minimax-m2.5",
 ];
-
 const PROJECTS_KEY = "routing_run_projects";
 const MAX_PROJECTS = 20;
 const CUSTOM_MODELS_KEY = "routing_run_models";
+
+let ocrWorkerPromise: Promise<any> | null = null;
+
+const getOcrWorker = async () => {
+  if (!ocrWorkerPromise) {
+    ocrWorkerPromise = createWorker("eng");
+  }
+  return ocrWorkerPromise;
+};
+
+const extractTextFromImageDataUrl = async (dataUrl: string) => {
+  const worker = await getOcrWorker();
+  const result = await worker.recognize(dataUrl);
+  const text = (result?.data?.text || "").trim();
+  return text;
+};
 
 const DEFAULT_FILES = [
   {
@@ -166,6 +182,7 @@ const IMAGE_EXTENSIONS = [
   ".heic",
   ".heif",
 ];
+const MAX_IMAGE_DIMENSION = 1280;
 
 const decodePreviewPayloadFromHash = (hash: string): PreviewPayload | null => {
   if (!hash) return null;
@@ -925,10 +942,12 @@ if (rootElement) {
     }
 
     const activeProjectMode = activeProject?.mode ?? "chat";
+    let attachmentsForSend = pendingAttachments.map((attachment) => ({ ...attachment }));
     const debugMode = isDebugRequest(trimmed);
-    const hasImageAttachment = pendingAttachments.some(
+    const hasImageAttachment = attachmentsForSend.some(
       (attachment) => attachment.kind === "image" && Boolean(attachment.dataUrl)
     );
+    const modelForRequest = selectedModel;
     const nextMode = hasImageAttachment
       ? "chat"
       : detectIntentMode(trimmed, activeProjectMode);
@@ -948,11 +967,44 @@ if (rootElement) {
       }
     }
 
+    // Convert image attachments into OCR text so the model receives text-only prompts.
+    if (hasImageAttachment) {
+      try {
+        const prepared = await Promise.all(
+          attachmentsForSend.map(async (att) => {
+            if (att.kind !== "image" || !att.dataUrl) return att;
+            const ocrText = await extractTextFromImageDataUrl(att.dataUrl);
+            return {
+              id: att.id,
+              name: att.name,
+              mimeType: "text/plain",
+              size: ocrText.length,
+              kind: "text",
+              textContent: ocrText
+                ? `Attached image: ${att.name}\n\nOCR text:\n${ocrText}`
+                : `Attached image: ${att.name}\n\nOCR could not read any text from this image. Please inspect it manually.`,
+            } as PendingAttachment;
+          })
+        );
+
+        attachmentsForSend = prepared;
+      } catch (err: any) {
+        toast.error(err?.message || "Failed to process images");
+        setIsStreaming(false);
+        setAbortController(null);
+        return;
+      }
+    }
+
+    const preparedHasImageAttachment = attachmentsForSend.some(
+      (attachment) => attachment.kind === "image" && Boolean(attachment.dataUrl)
+    );
+
     const userMessage: Message = {
       id: Date.now().toString(),
       role: "user",
       content: trimmed || "Please analyze these attachments.",
-      attachments: pendingAttachments.length > 0 ? pendingAttachments : undefined,
+      attachments: attachmentsForSend.length > 0 ? attachmentsForSend : undefined,
     };
 
     const assistantMessage: Message = {
@@ -964,6 +1016,7 @@ if (rootElement) {
     const nextMessages = [...messages, userMessage, assistantMessage];
     setMessages(nextMessages);
     setInput("");
+    setPendingAttachments([]);
     setIsStreaming(true);
     scrollToBottom("smooth");
 
@@ -996,8 +1049,10 @@ if (rootElement) {
             for (const attachment of m.attachments) {
               if (attachment.kind === "image" && attachment.dataUrl) {
                 contentParts.push({
-                  type: "image_url",
-                  image_url: { url: attachment.dataUrl },
+                  type: "text",
+                  text:
+                    attachment.textContent ||
+                    `Attached image: ${attachment.name}\n\nOCR could not be extracted.`,
                 });
                 continue;
               }
@@ -1033,14 +1088,12 @@ if (rootElement) {
 
       if (debugMode) {
         chatMessages.unshift({ role: "system", content: buildDebugContext() });
-      } else if (hasImageAttachment) {
-        chatMessages.unshift({
-          role: "system",
-          content:
-            "You are assisting with image understanding. Carefully analyze every attached image alongside the user's text and answer based on both.",
-        });
       } else if (nextMode === "project") {
         chatMessages.unshift({ role: "system", content: buildProjectContext() });
+      }
+
+      if (hasImageAttachment) {
+        toast.message("Converted image attachment(s) to OCR text before sending.");
       }
 
       // Stream from the /api/chat/stream endpoint
@@ -1051,7 +1104,7 @@ if (rootElement) {
         },
         body: JSON.stringify({
           messages: chatMessages,
-          model: selectedModel,
+          model: modelForRequest,
           apiKey: apiKey,
         }),
         signal: controller.signal,
@@ -1129,9 +1182,21 @@ if (rootElement) {
         buffer = lines[lines.length - 1] || "";
       }
 
+      if (!fullContent.trim()) {
+        const inlineNotice = hasImageAttachment
+          ? "No response received. The model may not accept inline images. Configure BUILT_IN_FORGE_API_URL/KEY so images are hosted, or try a different vision model."
+          : "No response received. Please try again.";
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === assistantMessage.id
+              ? { ...message, content: inlineNotice }
+              : message
+          )
+        );
+      }
+
       setIsStreaming(false);
       setAbortController(null);
-      setPendingAttachments([]);
     } catch (error) {
       if (error instanceof Error && error.name !== "AbortError") {
         toast.error(error.message || "Failed to get response");
@@ -1170,6 +1235,43 @@ if (rootElement) {
       reader.readAsDataURL(file);
     });
 
+  const readImageAsCompressedDataUrl = (file: File) =>
+    new Promise<string>(async (resolve, reject) => {
+      try {
+        const originalDataUrl = await readFileAsDataUrl(file);
+        const img = new Image();
+        img.onload = () => {
+          const width = img.width;
+          const height = img.height;
+          if (!width || !height) {
+            resolve(originalDataUrl);
+            return;
+          }
+
+          const scale = Math.min(1, MAX_IMAGE_DIMENSION / Math.max(width, height));
+          const targetW = Math.max(1, Math.round(width * scale));
+          const targetH = Math.max(1, Math.round(height * scale));
+
+          const canvas = document.createElement("canvas");
+          canvas.width = targetW;
+          canvas.height = targetH;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            resolve(originalDataUrl);
+            return;
+          }
+          ctx.drawImage(img, 0, 0, targetW, targetH);
+
+          const jpegDataUrl = canvas.toDataURL("image/jpeg", 0.82);
+          resolve(jpegDataUrl || originalDataUrl);
+        };
+        img.onerror = () => resolve(originalDataUrl);
+        img.src = originalDataUrl;
+      } catch (error) {
+        reject(error);
+      }
+    });
+
   const readFileAsText = (file: File) =>
     new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
@@ -1193,7 +1295,7 @@ if (rootElement) {
     };
 
     if (isImageFile(file)) {
-      const dataUrl = await readFileAsDataUrl(file);
+      const dataUrl = await readImageAsCompressedDataUrl(file);
       return { ...base, kind: "image", dataUrl };
     }
 
@@ -1565,7 +1667,6 @@ ${fileSnippets}`;
                 className="sandpack-preview"
                 showOpenInCodeSandbox={false}
                 showRefreshButton={false}
-                viewportSize={previewDevice === "mobile" ? { width: 390, height: 844 } : "auto"}
               />
             </SandpackLayout>
           </SandpackProvider>
@@ -1879,6 +1980,12 @@ ${fileSnippets}`;
                             isAssistant &&
                             message.id === artifactMessageId &&
                             previewReady;
+                          const imageAttachments =
+                            message.attachments?.filter(
+                              (attachment) => attachment.kind === "image" && Boolean(attachment.dataUrl)
+                            ) ?? [];
+                          const fileAttachments =
+                            message.attachments?.filter((attachment) => attachment.kind !== "image") ?? [];
 
                           return (
                             <motion.div
@@ -1953,6 +2060,27 @@ ${fileSnippets}`;
                                 </div>
                               ) : (
                                 <div className="message-bubble bg-primary text-primary-foreground shadow-lg shadow-primary/20">
+                                  {imageAttachments.length > 0 && (
+                                    <div className="mb-2 grid grid-cols-1 gap-2">
+                                      {imageAttachments.map((attachment) => (
+                                        <img
+                                          key={attachment.id}
+                                          src={attachment.dataUrl}
+                                          alt={attachment.name}
+                                          className="max-h-64 w-full rounded-lg border border-white/20 object-contain bg-black/20"
+                                        />
+                                      ))}
+                                    </div>
+                                  )}
+                                  {fileAttachments.length > 0 && (
+                                    <div className="mb-2 flex flex-col gap-1 rounded-md bg-black/20 p-2 text-xs">
+                                      {fileAttachments.map((attachment) => (
+                                        <div key={attachment.id} className="truncate">
+                                          {attachment.name} ({Math.ceil(attachment.size / 1024)} KB)
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
                                   <p className="whitespace-pre-wrap text-sm leading-relaxed">
                                     {message.content}
                                   </p>
@@ -2262,11 +2390,6 @@ ${fileSnippets}`;
                                 className="sandpack-preview"
                                 showOpenInCodeSandbox={false}
                                 showRefreshButton={false}
-                                viewportSize={
-                                  previewDevice === "mobile"
-                                    ? { width: 390, height: 844 }
-                                    : "auto"
-                                }
                               />
                             </SandpackLayout>
                           </SandpackProvider>
@@ -2381,11 +2504,6 @@ ${fileSnippets}`;
                             className="sandpack-preview"
                             showOpenInCodeSandbox={false}
                             showRefreshButton={false}
-                            viewportSize={
-                              previewDevice === "mobile"
-                                ? { width: 390, height: 844 }
-                                : "auto"
-                            }
                           />
                         </SandpackLayout>
                       </SandpackProvider>

@@ -27,9 +27,12 @@ const chatRequestSchema = z.object({
             }),
             z.object({
               type: z.literal("image_url"),
-              image_url: z.object({
-                url: z.string(),
-              }),
+              image_url: z.union([
+                z.string(),
+                z.object({
+                  url: z.string(),
+                }),
+              ]),
             }),
           ])
         ),
