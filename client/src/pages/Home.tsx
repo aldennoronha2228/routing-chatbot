@@ -180,6 +180,10 @@ export default function Home() {
     try {
       const raw = localStorage.getItem(PROJECTS_KEY);
       const parsed = raw ? (JSON.parse(raw) as Project[]) : [];
+      const requestedProjectId = new URLSearchParams(window.location.search).get("project");
+      if (requestedProjectId && parsed.some((project) => project.id === requestedProjectId)) {
+        return requestedProjectId;
+      }
       return parsed[0]?.id ?? null;
     } catch (error) {
       return null;
@@ -230,6 +234,11 @@ export default function Home() {
   const [mobileWorkspaceTab, setMobileWorkspaceTab] = useState<"chat" | "preview" | "code">(
     "chat"
   );
+  const [previewOnlyMode, setPreviewOnlyMode] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const params = new URLSearchParams(window.location.search);
+    return params.get("previewOnly") === "1";
+  });
 
   const modelLabel = useMemo(
     () => selectedModel.replace("route/", ""),
@@ -243,6 +252,23 @@ export default function Home() {
       setMobileWorkspaceTab("chat");
     }
   }, [isMobile]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const shouldOpenPreview = params.get("openPreview") === "1";
+    if (!shouldOpenPreview) return;
+    setConversationMode("project");
+    setPreviewTab("preview");
+    setArtifactOpen(true);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const previewOnly = params.get("previewOnly") === "1";
+    setPreviewOnlyMode(previewOnly);
+  }, []);
 
 
   const parseModelsInput = (value: string) => {
@@ -1143,55 +1169,16 @@ ${fileSnippets}`;
   };
 
   const handleOpenPreviewInNewTab = () => {
-    const fileCandidates = ["app/page.tsx", "app/page.jsx", "App.tsx", "App.jsx"];
-    const sourceFile = fileCandidates
-      .map((path) => files.find((file) => file.path === path)?.content ?? "")
-      .find(Boolean);
-
-    if (sourceFile) {
-      const srcDocMatch = sourceFile.match(/srcDoc=\{`([\s\S]*?)`\}/);
-      if (srcDocMatch?.[1]) {
-        const opened = window.open("", "_blank", "noopener,noreferrer");
-        if (!opened) {
-          toast.error("Popup blocked. Please allow popups for this site.");
-          return;
-        }
-        opened.document.open();
-        opened.document.write(srcDocMatch[1]);
-        opened.document.close();
-        return;
-      }
+    const currentUrl = new URL(window.location.href);
+    if (activeProjectId) {
+      currentUrl.searchParams.set("project", activeProjectId);
     }
-
-    const iframe = previewFrameRef.current?.querySelector("iframe");
-    if (!iframe) {
-      toast.error("Preview iframe not found");
-      return;
+    currentUrl.searchParams.set("previewOnly", "1");
+    currentUrl.searchParams.delete("openPreview");
+    const opened = window.open(currentUrl.toString(), "_blank", "noopener,noreferrer");
+    if (!opened) {
+      toast.error("Popup blocked. Please allow popups for this site.");
     }
-
-    const srcDoc = iframe.getAttribute("srcdoc");
-    if (srcDoc) {
-      const opened = window.open("", "_blank", "noopener,noreferrer");
-      if (!opened) {
-        toast.error("Popup blocked. Please allow popups for this site.");
-        return;
-      }
-      opened.document.open();
-      opened.document.write(srcDoc);
-      opened.document.close();
-      return;
-    }
-
-    const previewUrl = iframe.getAttribute("src");
-    if (previewUrl && previewUrl !== "about:blank") {
-      const opened = window.open(previewUrl, "_blank", "noopener,noreferrer");
-      if (!opened) {
-        toast.error("Popup blocked. Please allow popups for this site.");
-      }
-      return;
-    }
-
-    toast.error("Preview is not ready yet. Click Refresh and try again.");
   };
 
   const handleCopyPreviewCode = async () => {
@@ -1244,6 +1231,49 @@ ${fileSnippets}`;
       toast.error("Connection test failed");
     }
   };
+
+  if (previewOnlyMode) {
+    return (
+      <div className="h-svh w-full bg-[#111] p-0 m-0">
+        <div className={`preview-frame h-full w-full ${previewDevice === "mobile" ? "is-mobile" : ""}`}>
+          <SandpackProvider
+            key={previewRefreshKey}
+            template="react-ts"
+            files={sandpackFiles}
+            customSetup={{
+              entry: "/index.tsx",
+              dependencies: {
+                react: "^19.2.1",
+                "react-dom": "^19.2.1",
+                "framer-motion": "^12.23.22",
+                "lucide-react": "^0.453.0",
+                "class-variance-authority": "^0.7.1",
+                clsx: "^2.1.1",
+                "tailwind-merge": "^3.3.1",
+                three: "^0.179.1",
+                "@react-three/fiber": "^9.3.0",
+                "@react-three/drei": "^10.0.8",
+              },
+            }}
+            options={{
+              recompileMode: "immediate",
+              recompileDelay: 200,
+              autorun: true,
+            }}
+          >
+            <SandpackLayout className="sandpack-shell">
+              <SandpackPreview
+                className="sandpack-preview"
+                showOpenInCodeSandbox={false}
+                showRefreshButton={false}
+                viewportSize={previewDevice === "mobile" ? { width: 390, height: 844 } : "auto"}
+              />
+            </SandpackLayout>
+          </SandpackProvider>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <SidebarProvider defaultOpen>
