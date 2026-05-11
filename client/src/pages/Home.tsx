@@ -253,6 +253,7 @@ export default function Home() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const previewFrameRef = useRef<HTMLDivElement>(null);
   const lastArtifactAppliedMessageIdRef = useRef<string | null>(null);
+  const previewPayloadHydratedRef = useRef(false);
   const isMobile = useIsMobile();
   const [mobileWorkspaceOpen, setMobileWorkspaceOpen] = useState(false);
   const [mobileWorkspaceTab, setMobileWorkspaceTab] = useState<"chat" | "preview" | "code">(
@@ -298,6 +299,7 @@ export default function Home() {
     if (typeof window === "undefined") return;
     const fromHash = decodePreviewPayloadFromHash(window.location.hash);
     if (fromHash) {
+      previewPayloadHydratedRef.current = true;
       setFiles(fromHash.files);
       setActiveFilePath(fromHash.files[0]?.path ?? "app/page.tsx");
       setPreviewReady(true);
@@ -318,6 +320,7 @@ export default function Home() {
     try {
       const payload = JSON.parse(raw) as PreviewPayload;
       if (Array.isArray(payload.files) && payload.files.length > 0) {
+        previewPayloadHydratedRef.current = true;
         setFiles(payload.files);
         setActiveFilePath(payload.files[0]?.path ?? "app/page.tsx");
         setPreviewReady(true);
@@ -687,6 +690,7 @@ if (rootElement) {
 
   useEffect(() => {
     if (!activeProjectId) return;
+    if (previewOnlyMode && previewPayloadHydratedRef.current) return;
     const project = projects.find((item) => item.id === activeProjectId);
     if (!project) return;
     setConversationMode(project.mode ?? "chat");
@@ -700,7 +704,7 @@ if (rootElement) {
     setArtifactTitle(project.artifactTitle ?? null);
     setArtifactSubtitle(project.artifactSubtitle ?? null);
     setArtifactMessageId(project.artifactMessageId ?? null);
-  }, [activeProjectId]);
+  }, [activeProjectId, previewOnlyMode]);
 
   useEffect(() => {
     if (!activeProjectId) return;
