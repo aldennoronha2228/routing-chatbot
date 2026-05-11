@@ -154,6 +154,18 @@ type PendingAttachment = {
 
 const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 const MAX_TEXT_ATTACHMENT_BYTES = 600 * 1024;
+const IMAGE_EXTENSIONS = [
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
+  ".bmp",
+  ".svg",
+  ".ico",
+  ".heic",
+  ".heif",
+];
 
 const decodePreviewPayloadFromHash = (hash: string): PreviewPayload | null => {
   if (!hash) return null;
@@ -1130,6 +1142,12 @@ if (rootElement) {
     ].some((ext) => lowered.endsWith(ext));
   };
 
+  const isImageFile = (file: File) => {
+    if (file.type.startsWith("image/")) return true;
+    const lowered = file.name.toLowerCase();
+    return IMAGE_EXTENSIONS.some((ext) => lowered.endsWith(ext));
+  };
+
   const readFileAsDataUrl = (file: File) =>
     new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
@@ -1163,7 +1181,7 @@ if (rootElement) {
       kind: "binary",
     };
 
-    if (file.type.startsWith("image/")) {
+    if (isImageFile(file)) {
       const dataUrl = await readFileAsDataUrl(file);
       return { ...base, kind: "image", dataUrl };
     }
