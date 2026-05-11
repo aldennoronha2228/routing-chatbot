@@ -140,6 +140,22 @@ type PreviewPayload = {
   previewDevice: PreviewDevice;
 };
 
+const decodePreviewPayloadFromHash = (hash: string): PreviewPayload | null => {
+  if (!hash) return null;
+  const rawHash = hash.startsWith("#") ? hash.slice(1) : hash;
+  const params = new URLSearchParams(rawHash);
+  const encoded = params.get("payload");
+  if (!encoded) return null;
+  try {
+    const json = decodeURIComponent(encoded);
+    const parsed = JSON.parse(json) as PreviewPayload;
+    if (!Array.isArray(parsed.files) || parsed.files.length === 0) return null;
+    return parsed;
+  } catch (_error) {
+    return null;
+  }
+};
+
 export default function Home() {
   const createProject = (
     title = "Untitled Project",
@@ -280,6 +296,20 @@ export default function Home() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    const fromHash = decodePreviewPayloadFromHash(window.location.hash);
+    if (fromHash) {
+      setFiles(fromHash.files);
+      setActiveFilePath(fromHash.files[0]?.path ?? "app/page.tsx");
+      setPreviewReady(true);
+      setConversationMode("project");
+      setPreviewTab("preview");
+      setArtifactOpen(true);
+      if (fromHash.previewDevice) {
+        setPreviewDevice(fromHash.previewDevice);
+      }
+      return;
+    }
+
     const params = new URLSearchParams(window.location.search);
     const payloadKey = params.get("previewPayload");
     if (!payloadKey) return;
@@ -1204,19 +1234,19 @@ ${fileSnippets}`;
   };
 
   const handleOpenPreviewInNewTab = () => {
-    const payloadKey = `routing_preview_payload_${Date.now()}`;
     const payload: PreviewPayload = {
       files,
       previewDevice,
     };
-    localStorage.setItem(payloadKey, JSON.stringify(payload));
+    const encodedPayload = encodeURIComponent(JSON.stringify(payload));
 
     const currentUrl = new URL(window.location.origin + window.location.pathname);
     currentUrl.searchParams.set("previewOnly", "1");
-    currentUrl.searchParams.set("previewPayload", payloadKey);
+    currentUrl.searchParams.delete("previewPayload");
     if (activeProjectId && !activeProjectId.includes("previewOnly=")) {
       currentUrl.searchParams.set("project", activeProjectId);
     }
+    currentUrl.hash = `payload=${encodedPayload}`;
 
     const opened = window.open(currentUrl.toString(), "_blank", "noopener,noreferrer");
     if (!opened) {
