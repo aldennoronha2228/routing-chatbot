@@ -1142,6 +1142,21 @@ ${fileSnippets}`;
     setPreviewRefreshKey((value) => value + 1);
   };
 
+  const handleOpenPreviewInNewTab = () => {
+    const iframe = previewFrameRef.current?.querySelector("iframe");
+    const previewUrl = iframe?.getAttribute("src");
+
+    if (!previewUrl || previewUrl === "about:blank") {
+      toast.error("Preview URL not ready yet");
+      return;
+    }
+
+    const opened = window.open(previewUrl, "_blank", "noopener,noreferrer");
+    if (!opened) {
+      toast.error("Popup blocked. Please allow popups for this site.");
+    }
+  };
+
   const handleCopyPreviewCode = async () => {
     if (!activeFile?.content) return;
     try {
@@ -1745,6 +1760,12 @@ ${fileSnippets}`;
                           onClick={handlePreviewRefresh}
                         >
                           Refresh
+                        </button>
+                        <button
+                          className="preview-refresh"
+                          onClick={handleOpenPreviewInNewTab}
+                        >
+                          Open tab
                         </button>
                       </div>
                     </div>
