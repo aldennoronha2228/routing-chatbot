@@ -34,7 +34,6 @@ import {
 } from "@/components/ui/sidebar";
 import {
   SandpackLayout,
-  UnstyledOpenInCodeSandboxButton,
   SandpackPreview,
   SandpackProvider,
 } from "@codesandbox/sandpack-react";
@@ -1144,16 +1143,35 @@ ${fileSnippets}`;
   };
 
   const handleOpenPreviewInNewTab = () => {
-    const csbButton = previewFrameRef.current?.querySelector(
-      '[data-open-codesandbox="true"]'
-    ) as HTMLButtonElement | null;
-
-    if (!csbButton) {
-      toast.error("Preview action not ready yet");
+    const iframe = previewFrameRef.current?.querySelector("iframe");
+    if (!iframe) {
+      toast.error("Preview iframe not found");
       return;
     }
 
-    csbButton.click();
+    const srcDoc = iframe.getAttribute("srcdoc");
+    if (srcDoc) {
+      const opened = window.open("", "_blank", "noopener,noreferrer");
+      if (!opened) {
+        toast.error("Popup blocked. Please allow popups for this site.");
+        return;
+      }
+      opened.document.open();
+      opened.document.write(srcDoc);
+      opened.document.close();
+      return;
+    }
+
+    const previewUrl = iframe.getAttribute("src");
+    if (previewUrl && previewUrl !== "about:blank") {
+      const opened = window.open(previewUrl, "_blank", "noopener,noreferrer");
+      if (!opened) {
+        toast.error("Popup blocked. Please allow popups for this site.");
+      }
+      return;
+    }
+
+    toast.error("Preview is not ready yet. Click Refresh and try again.");
   };
 
   const handleCopyPreviewCode = async () => {
@@ -1836,12 +1854,6 @@ ${fileSnippets}`;
                             }}
                           >
                             <SandpackLayout className="sandpack-shell">
-                              <UnstyledOpenInCodeSandboxButton
-                                className="sr-only"
-                                data-open-codesandbox="true"
-                              >
-                                Open in CodeSandbox
-                              </UnstyledOpenInCodeSandboxButton>
                               <SandpackPreview
                                 className="sandpack-preview"
                                 showOpenInCodeSandbox={false}
@@ -1961,12 +1973,6 @@ ${fileSnippets}`;
                         }}
                       >
                         <SandpackLayout className="sandpack-shell">
-                          <UnstyledOpenInCodeSandboxButton
-                            className="sr-only"
-                            data-open-codesandbox="true"
-                          >
-                            Open in CodeSandbox
-                          </UnstyledOpenInCodeSandboxButton>
                           <SandpackPreview
                             className="sandpack-preview"
                             showOpenInCodeSandbox={false}
