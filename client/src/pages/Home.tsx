@@ -719,10 +719,25 @@ if (rootElement) {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(
-          errorData.message || `API error: ${response.statusText}`
-        );
+        const rawError = await response.text();
+        let errorMessage = `API error: ${response.statusText || response.status}`;
+
+        if (rawError) {
+          try {
+            const parsed = JSON.parse(rawError) as { message?: string };
+            if (parsed.message) {
+              errorMessage = parsed.message;
+            }
+          } catch {
+            // Server may return HTML/plain-text (for example fallback pages).
+            const shortText = rawError.replace(/\s+/g, " ").trim().slice(0, 140);
+            if (shortText) {
+              errorMessage = shortText;
+            }
+          }
+        }
+
+        throw new Error(errorMessage);
       }
 
       if (!response.body) {
