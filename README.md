@@ -10,6 +10,10 @@ Test multiple `route/...` models using a single `rk_` API key with real-time str
 
 <img src="https://readme-typing-svg.demolab.com?font=Inter&weight=600&size=24&duration=3000&pause=1000&color=8B5CF6&center=true&vCenter=true&width=700&lines=Fast+AI+Coding+Playground;Streaming+LLM+Responses;One+API+Key+for+All+Models;Built+with+Next.js+15+%2B+routing.run" />
 
+<img src="https://readme-typing-svg.demolab.com?font=JetBrains+Mono&weight=500&size=16&duration=2200&pause=900&color=4F8BFF&center=true&vCenter=true&width=700&lines=Realtime+Streaming+Tokens;Smooth+Sidebar+Transitions;IDE+Style+Code+Blocks" />
+
+<img src="https://readme-typing-svg.demolab.com?font=JetBrains+Mono&weight=500&size=14&duration=1800&pause=800&color=22D3EE&center=true&vCenter=true&width=700&lines=Typing+Indicator+Pulse...;Optimized+Rendering+Flow;Minimal+Latency+UX" />
+
 </div>
 
 ---
