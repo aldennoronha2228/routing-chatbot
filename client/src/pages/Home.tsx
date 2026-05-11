@@ -221,6 +221,7 @@ export default function Home() {
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const previewFrameRef = useRef<HTMLDivElement>(null);
+  const lastArtifactAppliedMessageIdRef = useRef<string | null>(null);
   const isMobile = useIsMobile();
 
   const modelLabel = useMemo(
@@ -601,6 +602,7 @@ if (rootElement) {
       .reverse()
       .find((message) => message.role === "assistant");
     if (!lastAssistant) return;
+    if (lastArtifactAppliedMessageIdRef.current === lastAssistant.id) return;
     const fileBlocks = parseFileBlocks(lastAssistant.content);
     if (fileBlocks.length === 0) return;
 
@@ -608,21 +610,26 @@ if (rootElement) {
 
     setFiles((prev) => {
       const map = new Map(prev.map((file) => [file.path, file]));
+      let changed = false;
       fileBlocks.forEach((file) => {
+        const existing = map.get(file.path);
+        if (!existing || existing.content !== file.content) {
+          changed = true;
+        }
         map.set(file.path, file);
       });
-      return Array.from(map.values());
+      return changed ? Array.from(map.values()) : prev;
     });
     setActiveFilePath(fileBlocks[0].path);
     setPreviewReady(true);
     setPreviewTab("preview");
     setConversationMode("project");
     setArtifactOpen(true);
-    const activeProject = projects.find((project) => project.id === activeProjectId);
+    lastArtifactAppliedMessageIdRef.current = lastAssistant.id;
     setArtifactTitle("Website Ready");
-    setArtifactSubtitle(activeProject?.title ?? "Generated project");
+    setArtifactSubtitle("Generated project");
     setArtifactMessageId(lastAssistant.id);
-  }, [messages, isStreaming, projects, activeProjectId]);
+  }, [messages, isStreaming]);
 
   const sandpackFiles = useMemo(() => {
     return buildSandpackFiles(files);
