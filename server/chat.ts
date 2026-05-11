@@ -6,7 +6,7 @@ import { TRPCError } from "@trpc/server";
 const ROUTING_RUN_API_URL = "https://api.routing.run/v1";
 
 interface ChatMessage {
-  role: "user" | "assistant";
+  role: "system" | "user" | "assistant";
   content: string;
 }
 
@@ -19,7 +19,7 @@ export const chatRouter = router({
       z.object({
         messages: z.array(
           z.object({
-            role: z.enum(["user", "assistant"]),
+            role: z.enum(["system", "user", "assistant"]),
             content: z.string(),
           })
         ),

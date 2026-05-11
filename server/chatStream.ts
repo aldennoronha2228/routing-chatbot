@@ -16,7 +16,7 @@ const ALLOWED_MODELS = [
 const chatRequestSchema = z.object({
   messages: z.array(
     z.object({
-      role: z.enum(["user", "assistant"]),
+      role: z.enum(["system", "user", "assistant"]),
       content: z.string(),
     })
   ),

@@ -143,129 +143,22 @@
   input[type="radio"]:not(:disabled) {
     @apply cursor-pointer;
   }
-}
-
-@layer components {
-  /**
-   * Custom container utility that centers content and adds responsive padding.
-   *
-   * This overrides Tailwind's default container behavior to:
-   * - Auto-center content (mx-auto)
-   * - Add responsive horizontal padding
-   * - Set max-width for large screens
-   *
-   * Usage: <div className="container">...</div>
-   *
-   * For custom widths, use max-w-* utilities directly:
-   * <div className="max-w-6xl mx-auto px-4">...</div>
-   */
-  .container {
-    width: 100%;
-    margin-left: auto;
-    margin-right: auto;
-    padding-left: 1rem; /* 16px - mobile padding */
-    padding-right: 1rem;
-  }
-
-  .flex {
-    min-height: 0;
-    min-width: 0;
-  }
-
-  @media (min-width: 640px) {
-    .container {
-      padding-left: 1.5rem; /* 24px - tablet padding */
-      padding-right: 1.5rem;
-    }
-  }
-
-  @media (min-width: 1024px) {
-    .container {
-      padding-left: 2rem; /* 32px - desktop padding */
-      padding-right: 2rem;
-      max-width: 1280px; /* Standard content width */
-    }
-  }
-}
-
-@layer components {
-  .app-shell {
-    @apply min-h-svh w-full flex bg-background text-foreground;
-    background-image:
-      radial-gradient(1200px 400px at 20% -10%, color-mix(in oklch, var(--primary) 12%, transparent), transparent 60%),
-      radial-gradient(900px 500px at 100% 0%, color-mix(in oklch, var(--primary) 8%, transparent), transparent 55%);
-  }
-
-  .message-bubble {
-    @apply max-w-[78%] rounded-2xl px-5 py-4 text-sm leading-relaxed backdrop-blur;
-  }
-
-  .chat-input-container {
-    box-shadow: 0 10px 30px -16px rgba(0, 0, 0, 0.45);
-  }
-
-  .chat-input-container:focus-within {
-    box-shadow: 0 0 0 1px color-mix(in oklch, var(--primary) 40%, transparent),
-      0 18px 40px -20px rgba(0, 0, 0, 0.6);
-  }
-
-  .chat-prose {
-    font-family: var(--font-sans);
-    color: inherit;
-  }
-
-  .chat-prose :is(h1, h2, h3, h4) {
-    font-family: var(--font-display);
-    letter-spacing: -0.02em;
-  }
-
-  .chat-prose pre {
-    @apply relative overflow-x-auto rounded-xl border border-border/60;
-    background: linear-gradient(180deg, oklch(0.22 0.006 285.885), oklch(0.19 0.006 285.885));
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-    padding: 2.75rem 1.5rem 1.5rem;
-  }
-
-  .chat-prose .code-block-header {
-    position: absolute;
-    top: 0.6rem;
-    left: 1rem;
-    right: 1rem;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    font-size: 0.7rem;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    color: color-mix(in oklch, var(--foreground) 65%, white 35%);
-    padding-bottom: 0.35rem;
-    border-bottom: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
-    background: linear-gradient(180deg, rgba(0, 0, 0, 0.25), transparent);
-  }
-
-  .chat-prose .code-copy-btn {
-    pointer-events: auto;
-    font-size: 0.7rem;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    border-radius: 999px;
-    padding: 0.15rem 0.6rem;
-    border: 1px solid color-mix(in oklch, var(--primary) 25%, transparent);
-    background: color-mix(in oklch, var(--primary) 18%, transparent);
-    color: color-mix(in oklch, var(--foreground) 80%, white 20%);
-    transition: all 0.2s ease;
-  }
-
-  .chat-prose .code-copy-btn[data-copied="true"] {
-    border-color: color-mix(in oklch, var(--primary) 45%, transparent);
-    background: color-mix(in oklch, var(--primary) 30%, transparent);
-  }
 
   .chat-prose pre code {
-    font-family: var(--font-mono);
-    font-size: 0.85rem;
-    line-height: 1.6;
-    color: color-mix(in oklch, var(--foreground) 90%, white 10%);
+    color: color-mix(in oklch, white 92%, var(--foreground) 8%);
+    text-shadow: 0 0 0.01px rgba(255, 255, 255, 0.2);
+  }
+
+  .chat-prose pre code span {
+    opacity: 1 !important;
+    filter: saturate(1.1);
+  }
+
+  .chat-prose pre code .token.comment,
+  .chat-prose pre code .token.prolog,
+  .chat-prose pre code .token.doctype,
+  .chat-prose pre code .token.cdata {
+    color: color-mix(in oklch, white 60%, var(--foreground) 40%) !important;
   }
 
   .chat-prose :not(pre) > code {
@@ -291,6 +184,387 @@
     border-radius: 999px;
     animation: blink 1s step-start infinite;
   }
+
+  .ai-ide-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1rem;
+    height: calc(100vh - 56px);
+    padding: 1rem;
+    transition: grid-template-columns 0.3s ease;
+  }
+
+  .app-shell {
+    @apply min-h-svh w-full flex bg-background text-foreground;
+  }
+
+  @media (min-width: 1024px) {
+    .ai-ide-layout.is-open {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 2rem;
+    }
+  }
+
+  .chat-pane {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border-radius: 24px;
+    border: 1px solid color-mix(in oklch, var(--border) 65%, transparent);
+    background: color-mix(in oklch, var(--card) 80%, transparent);
+    backdrop-filter: blur(12px);
+    overflow: hidden;
+  }
+
+  .ai-ide-layout.is-closed .chat-pane {
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    margin: 0;
+  }
+
+  .ai-ide-layout.is-closed .chat-scroll {
+    overflow: hidden;
+  }
+
+  .ai-ide-layout.is-closed .chat-input-bar {
+    position: static;
+  }
+
+  .chat-scroll {
+    flex: 1;
+    min-height: 0;
+    padding: 0 0.5rem;
+  }
+
+  .chat-content {
+    width: 100%;
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 1rem 1rem 1.25rem;
+  }
+
+  .chat-input-wrap {
+    width: 100%;
+    max-width: 980px;
+    margin: 0 auto;
+  }
+
+  .chat-input-bar {
+    border-top: 1px solid color-mix(in oklch, var(--border) 65%, transparent);
+    background: color-mix(in oklch, var(--background) 85%, transparent);
+    padding: 0.75rem 1rem 1rem;
+    backdrop-filter: blur(12px);
+  }
+
+  .preview-ready {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    padding: 0.35rem 0.6rem;
+    border-radius: 999px;
+    border: 1px solid color-mix(in oklch, var(--primary) 45%, transparent);
+    color: color-mix(in oklch, var(--primary) 80%, white 20%);
+    background: color-mix(in oklch, var(--primary) 16%, transparent);
+  }
+
+  .artifact-card {
+    width: 100%;
+    max-width: 520px;
+    border-radius: 18px;
+    padding: 1rem 1.2rem;
+    border: 1px solid color-mix(in oklch, var(--border) 60%, transparent);
+    background: color-mix(in oklch, var(--card) 88%, transparent);
+    box-shadow: 0 18px 32px -24px rgba(0, 0, 0, 0.6);
+  }
+
+  .artifact-card-header {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+  }
+
+  .artifact-card-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    background: color-mix(in oklch, var(--primary) 20%, transparent);
+    font-size: 1rem;
+  }
+
+  .artifact-card-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+  }
+
+  .artifact-card-subtitle {
+    font-size: 0.8rem;
+    color: color-mix(in oklch, var(--foreground) 70%, white 30%);
+  }
+
+  .artifact-card-actions {
+    margin-top: 0.9rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+  }
+
+  .preview-pane {
+    min-height: 0;
+    display: flex;
+  }
+
+  .preview-card {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border-radius: 16px;
+    border: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
+    background: #1e1e1e;
+    box-shadow: 0 20px 40px -28px rgba(0, 0, 0, 0.8);
+    overflow: hidden;
+  }
+
+  .preview-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.6rem 0.9rem;
+    border-bottom: 1px solid #2a2a2a;
+    background: #252526;
+  }
+
+  .preview-tabs {
+    display: inline-flex;
+    gap: 0.4rem;
+    background: #2d2d2d;
+    border-radius: 8px;
+    padding: 0.15rem;
+  }
+
+  .preview-tab {
+    border: none;
+    background: transparent;
+    color: #c5c5c5;
+    font-size: 0.72rem;
+    padding: 0.32rem 0.75rem;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+  }
+
+  .preview-tab.is-active {
+    background: #007acc;
+    color: #f3f3f3;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2);
+  }
+
+  .preview-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.7rem;
+    color: #bdbdbd;
+  }
+
+  .preview-status {
+    padding: 0.2rem 0.45rem;
+    border-radius: 6px;
+    background: #2d2d2d;
+    color: #9cdcfe;
+    font-size: 0.65rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .preview-status.muted {
+    color: #9e9e9e;
+  }
+
+  .preview-device-toggle {
+    display: inline-flex;
+    gap: 0.25rem;
+    background: #2d2d2d;
+    border-radius: 6px;
+    padding: 0.2rem;
+  }
+
+  .preview-device-toggle button {
+    border: none;
+    background: transparent;
+    color: #c5c5c5;
+    font-size: 0.65rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 5px;
+  }
+
+  .preview-device-toggle button.is-active {
+    background: #3c3c3c;
+    color: #f3f3f3;
+  }
+
+  .preview-refresh {
+    border: 1px solid #3a3a3a;
+    border-radius: 6px;
+    background: #2d2d2d;
+    color: #c5c5c5;
+    font-size: 0.65rem;
+    padding: 0.3rem 0.6rem;
+  }
+
+  .preview-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: #1e1e1e;
+  }
+
+  .preview-code {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+
+  .preview-files {
+    border-right: 1px solid #2a2a2a;
+    background: #252526;
+    color: #c5c5c5;
+    padding: 0.75rem 0.6rem;
+    overflow: auto;
+  }
+
+  .preview-files-header {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    color: #8f8f8f;
+    margin-bottom: 0.75rem;
+  }
+
+  .preview-files-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .preview-files-list button {
+    border: none;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    font-size: 0.78rem;
+    padding: 0.35rem 0.4rem;
+    border-radius: 6px;
+  }
+
+  .preview-files-list button.is-active {
+    background: #37373d;
+    color: #ffffff;
+  }
+
+  .preview-code-editor {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: #1e1e1e;
+    color: #d4d4d4;
+  }
+
+  .preview-code-header {
+    padding: 0.65rem 0.9rem;
+    border-bottom: 1px solid #2a2a2a;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.7rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #9cdcfe;
+  }
+
+  .preview-code-header button {
+    border: 1px solid #3a3a3a;
+    border-radius: 6px;
+    background: #2d2d2d;
+    color: #c5c5c5;
+    font-size: 0.65rem;
+    padding: 0.3rem 0.6rem;
+  }
+
+  .preview-code-editor pre {
+    flex: 1;
+    min-height: 0;
+    margin: 0;
+    padding: 1rem 1.2rem 1.4rem;
+    overflow: auto;
+    font-family: "JetBrains Mono", "Fira Code", monospace;
+    font-size: 0.8rem;
+    line-height: 1.6;
+    background: #1e1e1e;
+    color: #d4d4d4;
+  }
+
+  .preview-frame {
+    flex: 1;
+    min-height: 0;
+    background: #1e1e1e;
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
+    padding: 0.75rem;
+  }
+
+  .sandpack-shell {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: #1e1e1e;
+    border: 1px solid #2a2a2a;
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .sandpack-preview {
+    flex: 1 1 auto;
+    min-height: 360px;
+    height: 100%;
+  }
+
+  .sandpack-preview iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+    background: #0f0f10;
+  }
+
+  .sandpack-console {
+    flex: 0 0 140px;
+    height: 140px;
+    max-height: 180px;
+    border-top: 1px solid #2a2a2a;
+    background: #1b1b1b;
+  }
+
+  .preview-frame iframe {
+    width: 100%;
+    border: 1px solid #2a2a2a;
+    border-radius: 12px;
+    background: #0f0f10;
+  }
+
+  .preview-frame.is-mobile iframe {
+    max-width: 420px;
+  }
+
 
   .typing-dots {
     display: inline-flex;
