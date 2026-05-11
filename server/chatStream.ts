@@ -1,6 +1,10 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
 import { createWorker } from "tesseract.js";
+import {
+  ensureAiIdeSystemMessage,
+  resolveAiRequestTuning,
+} from "@shared/ai-ide";
 
 const ROUTING_RUN_API_URL = "https://api.routing.run/v1";
 
@@ -20,40 +24,43 @@ const extractTextFromDataUrl = async (dataUrl: string) => {
   return (result?.data?.text || "").trim();
 };
 
+const messageContentSchema = z.union([
+  z.string(),
+  z.array(
+    z.union([
+      z.object({
+        type: z.literal("text"),
+        text: z.string(),
+      }),
+      z.object({
+        type: z.literal("image_url"),
+        image_url: z.union([
+          z.string(),
+          z.object({
+            url: z.string(),
+          }),
+        ]),
+      }),
+    ])
+  ),
+]);
+
 const chatRequestSchema = z.object({
   messages: z.array(
     z.object({
       role: z.enum(["system", "user", "assistant"]),
-      content: z.union([
-        z.string(),
-        z.array(
-          z.union([
-            z.object({
-              type: z.literal("text"),
-              text: z.string(),
-            }),
-            z.object({
-              type: z.literal("image_url"),
-              image_url: z.union([
-                z.string(),
-                z.object({
-                  url: z.string(),
-                }),
-              ]),
-            }),
-          ])
-        ),
-      ]),
+      content: messageContentSchema,
     })
   ),
   model: z.string().min(1, "Model is required"),
   apiKey: z.string().min(1, "API key is required"),
+  temperature: z.number().min(0).max(2).optional(),
+  topP: z.number().min(0).max(1).optional(),
 });
 
 export function registerChatStreamRoutes(app: Router) {
   app.post("/api/chat/stream", async (req: Request, res: Response) => {
     try {
-      // Validate request body
       const parsed = chatRequestSchema.safeParse(req.body);
       if (!parsed.success) {
         res.status(400).json({
@@ -63,13 +70,10 @@ export function registerChatStreamRoutes(app: Router) {
         return;
       }
 
-      const { messages, model, apiKey } = parsed.data;
+      const { messages, model, apiKey, temperature, topP } = parsed.data;
       const imageCount = messages.reduce((count, msg) => {
         if (!Array.isArray(msg.content)) return count;
-        return (
-          count +
-          msg.content.filter((part) => part.type === "image_url").length
-        );
+        return count + msg.content.filter((part) => part.type === "image_url").length;
       }, 0);
       console.log(
         `[chatStream] model=${model} messages=${messages.length} images=${imageCount}`
@@ -81,10 +85,10 @@ export function registerChatStreamRoutes(app: Router) {
             return message;
           }
 
-          const parts = [] as Array<
+          const parts: Array<
             | { type: "text"; text: string }
             | { type: "image_url"; image_url: { url: string } }
-          >;
+          > = [];
 
           for (const part of message.content) {
             if (part.type !== "image_url") {
@@ -123,7 +127,15 @@ export function registerChatStreamRoutes(app: Router) {
         })
       );
 
-      const normalizedImageCount = normalizedMessages.reduce((count, msg) => {
+      const messagesWithSystem = ensureAiIdeSystemMessage(normalizedMessages, {
+        mode: "chat",
+        projectTitle: "Unknown project",
+        projectFiles: [],
+        selectedModel: model,
+        userPrompt: "",
+      });
+
+      const normalizedImageCount = messagesWithSystem.reduce((count, msg) => {
         if (!Array.isArray(msg.content)) return count;
         return count + msg.content.filter((part) => part.type === "image_url").length;
       }, 0);
@@ -133,30 +145,25 @@ export function registerChatStreamRoutes(app: Router) {
         );
       }
 
-      // Set streaming headers
       res.setHeader("Content-Type", "text/event-stream");
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Connection", "keep-alive");
       res.setHeader("Access-Control-Allow-Origin", "*");
 
-      // Make request to routing.run API
-      const response = await fetch(
-        `${ROUTING_RUN_API_URL}/chat/completions`,
-        {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model,
-            messages: normalizedMessages,
-            stream: true,
-            temperature: 0.7,
-            top_p: 0.9,
-          }),
-        }
-      );
+      const response = await fetch(`${ROUTING_RUN_API_URL}/chat/completions`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          messages: messagesWithSystem,
+          stream: true,
+          temperature: temperature ?? resolveAiRequestTuning("chat").temperature,
+          top_p: topP ?? resolveAiRequestTuning("chat").topP,
+        }),
+      });
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -199,7 +206,6 @@ export function registerChatStreamRoutes(app: Router) {
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split("\n");
 
-          // Process all complete lines
           for (let i = 0; i < lines.length - 1; i++) {
             const line = lines[i]!.trim();
 
@@ -217,17 +223,14 @@ export function registerChatStreamRoutes(app: Router) {
                   data.choices[0].delta.content
                 ) {
                   const chunk = data.choices[0].delta.content;
-                  res.write(
-                    `data: ${JSON.stringify({ content: chunk })}\n\n`
-                  );
+                  res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
                 }
-              } catch (e) {
-                // Skip invalid JSON lines
+              } catch (_error) {
+                // Skip invalid JSON lines.
               }
             }
           }
 
-          // Keep the last incomplete line in the buffer
           buffer = lines[lines.length - 1] || "";
         }
       } catch (error) {

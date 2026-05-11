@@ -2,6 +2,10 @@ import { z } from "zod";
 import { publicProcedure, router } from "./_core/trpc";
 import { observable } from "@trpc/server/observable";
 import { TRPCError } from "@trpc/server";
+import {
+  ensureAiIdeSystemMessage,
+  resolveAiRequestTuning,
+} from "@shared/ai-ide";
 
 const ROUTING_RUN_API_URL = "https://api.routing.run/v1";
 
@@ -25,12 +29,22 @@ export const chatRouter = router({
         ),
         model: z.string().default("route/kimi-k2.5"),
         apiKey: z.string().min(1, "API key is required"),
+        temperature: z.number().min(0).max(2).optional(),
+        topP: z.number().min(0).max(1).optional(),
       })
     )
     .mutation(({ input }) => {
       return observable<string>((emit) => {
         (async () => {
           try {
+            const messagesWithSystem = ensureAiIdeSystemMessage(input.messages, {
+              mode: "chat",
+              projectTitle: "Unknown project",
+              projectFiles: [],
+              selectedModel: input.model,
+              userPrompt: "",
+            });
+
             const response = await fetch(
               `${ROUTING_RUN_API_URL}/chat/completions`,
               {
@@ -41,10 +55,10 @@ export const chatRouter = router({
                 },
                 body: JSON.stringify({
                   model: input.model,
-                  messages: input.messages,
+                  messages: messagesWithSystem,
                   stream: true,
-                  temperature: 0.7,
-                  top_p: 0.9,
+                  temperature: input.temperature ?? resolveAiRequestTuning("chat").temperature,
+                  top_p: input.topP ?? resolveAiRequestTuning("chat").topP,
                 }),
               }
             );

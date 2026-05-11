@@ -62,6 +62,11 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useIsMobile } from "@/hooks/useMobile";
 import JSZip from "jszip";
 import { createWorker } from "tesseract.js";
+import {
+  buildAiIdeSystemPrompt,
+  resolveAiRequestTuning,
+  type AiConversationMode,
+} from "@shared/ai-ide";
 
 const MODELS = [
   "route/kimi-k2.5",
@@ -329,6 +334,24 @@ export default function Home() {
     [selectedModel]
   );
   const isProjectMode = conversationMode === "project";
+
+  const buildAiRequestContext = (mode: AiConversationMode, prompt: string) =>
+    buildAiIdeSystemPrompt({
+      mode,
+      projectTitle: activeProject?.title ?? "Untitled Project",
+      projectFiles: files,
+      activeFilePath,
+      activeArtifact: {
+        title: artifactTitle,
+        subtitle: artifactSubtitle,
+        previewOpen: artifactOpen,
+        previewReady,
+        messageId: artifactMessageId,
+      },
+      recentMessages: messages,
+      selectedModel,
+      userPrompt: prompt,
+    });
 
   useEffect(() => {
     if (!isMobile) {
@@ -1214,6 +1237,8 @@ if (rootElement) {
     const preparedHasImageAttachment = attachmentsForSend.some(
       (attachment) => attachment.kind === "image" && Boolean(attachment.dataUrl)
     );
+    const aiMode: AiConversationMode = debugMode ? "debug" : nextMode;
+    const requestTuning = resolveAiRequestTuning(aiMode);
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -1301,11 +1326,10 @@ if (rootElement) {
           };
         });
 
-      if (debugMode) {
-        chatMessages.unshift({ role: "system", content: buildDebugContext() });
-      } else if (nextMode === "project") {
-        chatMessages.unshift({ role: "system", content: buildProjectContext() });
-      }
+      chatMessages.unshift({
+        role: "system",
+        content: buildAiRequestContext(aiMode, trimmed),
+      });
 
       if (hasImageAttachment) {
         toast.message("Converted image attachment(s) to OCR text before sending.");
@@ -1321,6 +1345,8 @@ if (rootElement) {
           messages: chatMessages,
           model: modelForRequest,
           apiKey: apiKey,
+            temperature: requestTuning.temperature,
+            topP: requestTuning.topP,
         }),
         signal: controller.signal,
       });
@@ -2211,6 +2237,13 @@ ${fileSnippets}`;
                           const showCursor = isAssistant && isStreaming && isLast;
                           const showTyping =
                             isAssistant && isStreaming && isLast && !message.content;
+                          const streamStatusText = isAssistant && isStreaming && isLast
+                            ? isProjectMode
+                              ? previewReady
+                                ? "Updating preview..."
+                                : "Editing files..."
+                              : "Thinking..."
+                            : null;
                           const showArtifactCard =
                             isProjectMode &&
                             isAssistant &&
@@ -2237,6 +2270,11 @@ ${fileSnippets}`;
                             >
                               {isAssistant ? (
                                 <div className="flex max-w-full flex-col items-start gap-3">
+                                  {streamStatusText && (
+                                    <div className="text-[11px] uppercase tracking-[0.24em] text-muted-foreground/80">
+                                      {streamStatusText}
+                                    </div>
+                                  )}
                                   <div className="message-bubble bg-card/70 text-card-foreground border border-border/70">
                                     {showTyping ? (
                                       <div className="typing-dots" aria-label="AI is typing">
