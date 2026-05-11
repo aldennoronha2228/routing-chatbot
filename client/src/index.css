@@ -500,7 +500,7 @@
     border-right: 1px solid #2a2a2a;
     background: #252526;
     color: #c5c5c5;
-    padding: 0.75rem 0.6rem;
+    padding: 0.65rem 0.45rem 0.75rem;
     overflow: auto;
   }
 
@@ -512,24 +512,62 @@
     margin-bottom: 0.75rem;
   }
 
-  .preview-files-list {
+  .preview-tree {
     display: flex;
     flex-direction: column;
-    gap: 0.35rem;
+    gap: 0.1rem;
   }
 
-  .preview-files-list button {
+  .preview-tree-row {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
     border: none;
     background: transparent;
-    color: inherit;
+    color: #d4d4d4;
     text-align: left;
-    font-size: 0.78rem;
-    padding: 0.35rem 0.4rem;
-    border-radius: 6px;
+    font-size: 0.8rem;
+    min-height: 1.8rem;
+    padding: 0.1rem 0.55rem 0.1rem 0.35rem;
+    border-radius: 4px;
+    position: relative;
+    font-family: var(--font-sans);
   }
 
-  .preview-files-list button.is-active {
+  .preview-tree-row:hover {
+    background: #2a2d2e;
+  }
+
+  .preview-tree-row.is-active {
     background: #37373d;
+    color: #ffffff;
+  }
+
+  .preview-tree-row svg {
+    flex: none;
+    color: #c5c5c5;
+  }
+
+  .preview-tree-folder {
+    font-weight: 500;
+    color: #c8c8c8;
+  }
+
+  .preview-tree-file {
+    color: #d4d4d4;
+  }
+
+  .preview-tree-chevron {
+    width: 0.9rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #808080;
+  }
+
+  .preview-tree-row.is-active .preview-tree-chevron,
+  .preview-tree-row.is-active svg {
     color: #ffffff;
   }
 

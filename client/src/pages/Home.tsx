@@ -45,6 +45,7 @@ import {
   ChevronRight,
   FileText,
   Folder,
+  FolderOpen,
   Monitor,
   MessageSquare,
   Paperclip,
@@ -507,6 +508,17 @@ export default function Home() {
     );
   };
 
+  const getAncestorFolderPaths = (path: string) => {
+    const parts = path.split("/").filter(Boolean);
+    const ancestors: string[] = ["my-app"];
+    let current = "my-app";
+    for (let index = 0; index < parts.length - 1; index += 1) {
+      current = `${current}/${parts[index]}`;
+      ancestors.push(current);
+    }
+    return ancestors;
+  };
+
   const isFolderOpen = (path: string) => openFolders.includes(path);
 
   const toggleFolder = (path: string) => {
@@ -531,7 +543,7 @@ export default function Home() {
             <span className="preview-tree-chevron" aria-hidden>
               {isOpen ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
             </span>
-            <Folder className="size-3" />
+            {isOpen ? <FolderOpen className="size-3" /> : <Folder className="size-3" />}
             <span>{node.name}</span>
           </button>
           {isOpen &&
@@ -1001,6 +1013,14 @@ if (rootElement) {
   useEffect(() => {
     setOpenFolders((current) => (current.includes("my-app") ? current : ["my-app", ...current]));
   }, [files]);
+
+  useEffect(() => {
+    setOpenFolders((current) => {
+      const next = new Set(current);
+      getAncestorFolderPaths(activeFilePath).forEach((folderPath) => next.add(folderPath));
+      return Array.from(next);
+    });
+  }, [activeFilePath]);
 
   useEffect(() => {
     if (files.length === 0) return;
