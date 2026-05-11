@@ -329,7 +329,17 @@ export default function Home() {
     <iframe
       title="Generated Preview"
       srcDoc={\`${escaped}\`}
-      style={{ width: "100%", minHeight: "100vh", border: "0" }}
+      width="100%"
+      height="100%"
+      style={{
+        display: "block",
+        width: "100%",
+        minWidth: "100%",
+        maxWidth: "100%",
+        height: "100vh",
+        minHeight: "100vh",
+        border: "0",
+      }}
     />
   );
 }
@@ -456,7 +466,23 @@ export default function App() {
       .map(([, content]) => sanitizeCss(content))
       .join("\n\n");
 
-    sandpackFiles["/styles.css"] = { code: cssContent || "" };
+    const generatedPreviewIframeFix = `
+iframe[title="Generated Preview"] {
+  display: block;
+  width: 100% !important;
+  min-width: 100% !important;
+  max-width: 100% !important;
+  height: 100vh;
+  min-height: 100vh;
+  border: 0;
+}
+`.trim();
+
+    const mergedStyles = [cssContent, generatedPreviewIframeFix]
+      .filter(Boolean)
+      .join("\n\n");
+
+    sandpackFiles["/styles.css"] = { code: mergedStyles };
     sandpackFiles["/index.tsx"] = {
       code: `import React from "react";
 import { createRoot } from "react-dom/client";
