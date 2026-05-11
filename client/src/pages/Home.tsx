@@ -55,6 +55,7 @@ import {
 import { toast } from "sonner";
 import { AnimatePresence, motion } from "framer-motion";
 import { useIsMobile } from "@/hooks/useMobile";
+import JSZip from "jszip";
 
 const MODELS = [
   "route/kimi-k2.5",
@@ -104,6 +105,7 @@ interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
+  attachments?: PendingAttachment[];
 }
 
 type ConversationMode = "chat" | "project";
@@ -139,6 +141,19 @@ type PreviewPayload = {
   files: VfsFile[];
   previewDevice: PreviewDevice;
 };
+
+type PendingAttachment = {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  kind: "image" | "text" | "binary";
+  dataUrl?: string;
+  textContent?: string;
+};
+
+const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+const MAX_TEXT_ATTACHMENT_BYTES = 600 * 1024;
 
 const decodePreviewPayloadFromHash = (hash: string): PreviewPayload | null => {
   if (!hash) return null;
@@ -264,6 +279,8 @@ export default function Home() {
     const params = new URLSearchParams(window.location.search);
     return params.get("previewOnly") === "1";
   });
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
 
   const modelLabel = useMemo(
     () => selectedModel.replace("route/", ""),
@@ -885,8 +902,8 @@ if (rootElement) {
 
   const handleSendMessage = async () => {
     const trimmed = input.trim();
-    if (!trimmed) {
-      toast.error("Please enter a message");
+    if (!trimmed && pendingAttachments.length === 0) {
+      toast.error("Please enter a message or attach files");
       return;
     }
 
@@ -917,7 +934,8 @@ if (rootElement) {
     const userMessage: Message = {
       id: Date.now().toString(),
       role: "user",
-      content: trimmed,
+      content: trimmed || "Please analyze these attachments.",
+      attachments: pendingAttachments.length > 0 ? pendingAttachments : undefined,
     };
 
     const assistantMessage: Message = {
@@ -938,13 +956,63 @@ if (rootElement) {
 
       const chatMessages: Array<{
         role: "system" | "user" | "assistant";
-        content: string;
+        content:
+          | string
+          | Array<
+              | { type: "text"; text: string }
+              | { type: "image_url"; image_url: { url: string } }
+            >;
       }> = nextMessages
         .filter((message) => message.role !== "assistant" || message.content)
-        .map((m) => ({
-          role: m.role,
-          content: m.content,
-        }));
+        .map((m) => {
+          if (m.role === "user" && m.attachments?.length) {
+            const contentParts: Array<
+              | { type: "text"; text: string }
+              | { type: "image_url"; image_url: { url: string } }
+            > = [
+              {
+                type: "text",
+                text: m.content || "Please analyze these attachments.",
+              },
+            ];
+
+            for (const attachment of m.attachments) {
+              if (attachment.kind === "image" && attachment.dataUrl) {
+                contentParts.push({
+                  type: "image_url",
+                  image_url: { url: attachment.dataUrl },
+                });
+                continue;
+              }
+
+              if (attachment.kind === "text") {
+                contentParts.push({
+                  type: "text",
+                  text: `Attached file: ${attachment.name}\n\n\`\`\`\n${attachment.textContent ?? ""}\n\`\`\``,
+                });
+                continue;
+              }
+
+              contentParts.push({
+                type: "text",
+                text: `Attached binary file: ${attachment.name} (${attachment.mimeType || "application/octet-stream"}, ${attachment.size} bytes)${
+                  attachment.dataUrl
+                    ? "\nData URL included for analysis."
+                    : "\nData not included because file is large."
+                }`,
+              });
+            }
+
+            return {
+              role: m.role,
+              content: contentParts,
+            };
+          }
+          return {
+            role: m.role,
+            content: m.content,
+          };
+        });
 
       if (debugMode) {
         chatMessages.unshift({ role: "system", content: buildDebugContext() });
@@ -1040,6 +1108,7 @@ if (rootElement) {
 
       setIsStreaming(false);
       setAbortController(null);
+      setPendingAttachments([]);
     } catch (error) {
       if (error instanceof Error && error.name !== "AbortError") {
         toast.error(error.message || "Failed to get response");
@@ -1050,6 +1119,97 @@ if (rootElement) {
       setIsStreaming(false);
       setAbortController(null);
     }
+  };
+
+  const isTextLikeFile = (file: File) => {
+    if (file.type.startsWith("text/")) return true;
+    const lowered = file.name.toLowerCase();
+    return [
+      ".md", ".txt", ".json", ".yaml", ".yml", ".xml", ".csv", ".ts", ".tsx", ".js",
+      ".jsx", ".css", ".html", ".py", ".java", ".c", ".cpp", ".go", ".rs", ".sh",
+    ].some((ext) => lowered.endsWith(ext));
+  };
+
+  const readFileAsDataUrl = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === "string") resolve(reader.result);
+        else reject(new Error("Failed to read file"));
+      };
+      reader.onerror = () => reject(new Error("Failed to read file"));
+      reader.readAsDataURL(file);
+    });
+
+  const readFileAsText = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+      reader.onerror = () => reject(new Error("Failed to read file"));
+      reader.readAsText(file);
+    });
+
+  const processAttachmentFile = async (file: File): Promise<PendingAttachment | null> => {
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      toast.error(`${file.name} is too large. Max size is 5MB.`);
+      return null;
+    }
+
+    const base: PendingAttachment = {
+      id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      name: file.name,
+      mimeType: file.type || "application/octet-stream",
+      size: file.size,
+      kind: "binary",
+    };
+
+    if (file.type.startsWith("image/")) {
+      const dataUrl = await readFileAsDataUrl(file);
+      return { ...base, kind: "image", dataUrl };
+    }
+
+    if (isTextLikeFile(file) && file.size <= MAX_TEXT_ATTACHMENT_BYTES) {
+      const textContent = await readFileAsText(file);
+      return { ...base, kind: "text", textContent: textContent.slice(0, 120000) };
+    }
+
+    if (file.size <= 2 * 1024 * 1024) {
+      const dataUrl = await readFileAsDataUrl(file);
+      return { ...base, kind: "binary", dataUrl };
+    }
+
+    return base;
+  };
+
+  const handleAttachmentFiles = async (filesList: FileList | null) => {
+    if (!filesList || filesList.length === 0) return;
+    const files = Array.from(filesList);
+    const processed = await Promise.all(files.map((file) => processAttachmentFile(file)));
+    const valid = processed.filter((item): item is PendingAttachment => Boolean(item));
+    if (valid.length > 0) {
+      setPendingAttachments((prev) => [...prev, ...valid]);
+      toast.success(`${valid.length} attachment${valid.length > 1 ? "s" : ""} added`);
+    }
+  };
+
+  const handleAttachmentButtonClick = () => {
+    attachmentInputRef.current?.click();
+  };
+
+  const handleAttachmentInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    await handleAttachmentFiles(e.target.files);
+    e.target.value = "";
+  };
+
+  const handleTextareaPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = Array.from(e.clipboardData?.items ?? []);
+    const imageItem = items.find((item) => item.type.startsWith("image/"));
+    if (!imageItem) return;
+    const file = imageItem.getAsFile();
+    if (!file) return;
+    const dataTransfer = new DataTransfer();
+    dataTransfer.items.add(file);
+    handleAttachmentFiles(dataTransfer.files);
   };
 
   const handleStop = () => {
@@ -1074,6 +1234,7 @@ if (rootElement) {
     setArtifactTitle(null);
     setArtifactSubtitle(null);
     setArtifactMessageId(null);
+    setPendingAttachments([]);
   };
 
   const handleAddModels = () => {
@@ -1255,6 +1416,38 @@ ${fileSnippets}`;
     const opened = window.open(currentUrl.toString(), "_blank", "noopener,noreferrer");
     if (!opened) {
       toast.error("Popup blocked. Please allow popups for this site.");
+    }
+  };
+
+  const handleDownloadPreviewZip = async () => {
+    if (files.length === 0) {
+      toast.error("No files available to download");
+      return;
+    }
+
+    try {
+      const zip = new JSZip();
+      files.forEach((file) => {
+        zip.file(file.path, file.content);
+      });
+
+      const blob = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      const projectSlug =
+        (activeProject?.title || "website")
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "") || "website";
+      anchor.href = url;
+      anchor.download = `${projectSlug}.zip`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      toast.success("ZIP downloaded");
+    } catch (error) {
+      toast.error("Failed to create ZIP");
     }
   };
 
@@ -1781,12 +1974,21 @@ ${fileSnippets}`;
                 <div className="chat-input-wrap flex w-full flex-col gap-3">
                   <div className="chat-input-container flex flex-col gap-3 rounded-2xl border border-border/70 bg-card/70 p-3 shadow-lg shadow-black/10 transition">
                     <div className="flex items-start gap-3">
+                      <input
+                        ref={attachmentInputRef}
+                        type="file"
+                        multiple
+                        accept="image/*,.zip,.pdf,.txt,.md,.json,.csv,.ts,.tsx,.js,.jsx,.css,.html,.xml,.yaml,.yml,.py,.java,.c,.cpp,.go,.rs,.sh"
+                        className="hidden"
+                        onChange={handleAttachmentInputChange}
+                      />
                       <Button
                         variant="ghost"
                         size="icon"
                         className="mt-1 size-9 rounded-xl text-muted-foreground hover:text-foreground"
                         disabled={isStreaming}
                         aria-label="Attach file"
+                        onClick={handleAttachmentButtonClick}
                       >
                         <Paperclip className="size-4" />
                       </Button>
@@ -1794,6 +1996,7 @@ ${fileSnippets}`;
                         ref={textareaRef}
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
+                        onPaste={handleTextareaPaste}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" && !e.shiftKey) {
                             e.preventDefault();
@@ -1806,6 +2009,45 @@ ${fileSnippets}`;
                         disabled={isStreaming}
                       />
                     </div>
+                    {pendingAttachments.length > 0 && (
+                      <div className="flex flex-col gap-2 rounded-xl border border-border/70 bg-background/60 p-2">
+                        {pendingAttachments.map((attachment) => (
+                          <div key={attachment.id} className="flex items-center gap-3">
+                            {attachment.kind === "image" && attachment.dataUrl ? (
+                              <img
+                                src={attachment.dataUrl}
+                                alt={attachment.name}
+                                className="h-12 w-12 rounded-md object-cover"
+                              />
+                            ) : (
+                              <div className="flex h-12 w-12 items-center justify-center rounded-md bg-muted text-xs">
+                                {attachment.name.toLowerCase().endsWith(".zip") ? "ZIP" : "FILE"}
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <div className="truncate text-xs font-medium">{attachment.name}</div>
+                              <div className="text-[11px] text-muted-foreground">
+                                {attachment.mimeType || "application/octet-stream"} • {Math.ceil(attachment.size / 1024)} KB
+                              </div>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="ml-auto"
+                              onClick={() =>
+                                setPendingAttachments((prev) =>
+                                  prev.filter((item) => item.id !== attachment.id)
+                                )
+                              }
+                              disabled={isStreaming}
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
 
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <Select
@@ -1840,7 +2082,7 @@ ${fileSnippets}`;
                         ) : (
                           <Button
                             onClick={handleSendMessage}
-                            disabled={!input.trim() || !apiKey.trim()}
+                            disabled={(!input.trim() && pendingAttachments.length === 0) || !apiKey.trim()}
                             className="h-8 gap-2 rounded-full px-3 text-xs"
                           >
                             <Send className="size-3" />
@@ -1910,6 +2152,12 @@ ${fileSnippets}`;
                           onClick={handleOpenPreviewInNewTab}
                         >
                           Open tab
+                        </button>
+                        <button
+                          className="preview-refresh"
+                          onClick={handleDownloadPreviewZip}
+                        >
+                          Download ZIP
                         </button>
                       </div>
                     </div>
