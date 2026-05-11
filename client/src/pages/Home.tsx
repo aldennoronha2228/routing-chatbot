@@ -552,7 +552,6 @@ if (rootElement) {
   }, [files, activeFilePath]);
 
   useEffect(() => {
-    if (!isProjectMode) return;
     if (isStreaming) return;
     const lastAssistant = [...messages]
       .reverse()
@@ -573,11 +572,13 @@ if (rootElement) {
     setActiveFilePath(fileBlocks[0].path);
     setPreviewReady(true);
     setPreviewTab("preview");
+    setConversationMode("project");
+    setArtifactOpen(true);
     const activeProject = projects.find((project) => project.id === activeProjectId);
     setArtifactTitle("Website Ready");
     setArtifactSubtitle(activeProject?.title ?? "Generated project");
     setArtifactMessageId(lastAssistant.id);
-  }, [messages, isStreaming, isProjectMode]);
+  }, [messages, isStreaming, projects, activeProjectId]);
 
   const sandpackFiles = useMemo(() => {
     return buildSandpackFiles(files);
