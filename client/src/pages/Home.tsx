@@ -41,6 +41,10 @@ import { Streamdown } from "streamdown";
 import {
   ArrowUpRight,
   ChevronLeft,
+  ChevronDown,
+  ChevronRight,
+  FileText,
+  Folder,
   Monitor,
   MessageSquare,
   Paperclip,
@@ -151,6 +155,13 @@ type PreviewDevice = "desktop" | "mobile";
 type VfsFile = {
   path: string;
   content: string;
+};
+
+type FileTreeNode = {
+  name: string;
+  path: string;
+  type: "folder" | "file";
+  children: FileTreeNode[];
 };
 
 type PreviewPayload = {
@@ -285,6 +296,7 @@ export default function Home() {
   );
   const [previewReady, setPreviewReady] = useState(false);
   const [previewRefreshKey, setPreviewRefreshKey] = useState(0);
+  const [openFolders, setOpenFolders] = useState<string[]>(["my-app"]);
   const [apiKey, setApiKey] = useState(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem("routing_run_api_key") || "";
@@ -429,6 +441,121 @@ export default function Home() {
       .replace(/\s+/g, " ");
   };
 
+  const buildFileTree = (currentFiles: VfsFile[]) => {
+    const root: FileTreeNode = {
+      name: "my-app",
+      path: "my-app",
+      type: "folder",
+      children: [],
+    };
+
+    const ensureChildFolder = (parent: FileTreeNode, name: string) => {
+      let child = parent.children.find(
+        (node) => node.type === "folder" && node.name === name
+      );
+      if (!child) {
+        child = {
+          name,
+          path: `${parent.path}/${name}`,
+          type: "folder",
+          children: [],
+        };
+        parent.children.push(child);
+      }
+      return child;
+    };
+
+    for (const file of currentFiles) {
+      const cleanedPath = normalizeFilePathLabel(file.path).replace(/^\/+/, "");
+      const parts = cleanedPath.split("/").filter(Boolean);
+      if (parts.length === 0) continue;
+
+      let node = root;
+      for (let index = 0; index < parts.length; index += 1) {
+        const part = parts[index]!;
+        const isLeaf = index === parts.length - 1;
+
+        if (isLeaf) {
+          node.children.push({
+            name: part,
+            path: cleanedPath,
+            type: "file",
+            children: [],
+          });
+        } else {
+          node = ensureChildFolder(node, part);
+        }
+      }
+    }
+
+    const sortNode = (node: FileTreeNode) => {
+      node.children.sort((a, b) => {
+        if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
+      node.children.forEach(sortNode);
+    };
+
+    sortNode(root);
+    return root;
+  };
+
+  const getFolderPaths = (node: FileTreeNode): string[] => {
+    const folderPaths = node.type === "folder" ? [node.path] : [];
+    return folderPaths.concat(
+      node.children.flatMap((child) => getFolderPaths(child))
+    );
+  };
+
+  const isFolderOpen = (path: string) => openFolders.includes(path);
+
+  const toggleFolder = (path: string) => {
+    setOpenFolders((current) =>
+      current.includes(path)
+        ? current.filter((folderPath) => folderPath !== path)
+        : [...current, path]
+    );
+  };
+
+  const renderFileTree = (node: FileTreeNode, depth = 0) => {
+    if (node.type === "folder") {
+      const isOpen = isFolderOpen(node.path);
+      return (
+        <div key={node.path}>
+          <button
+            type="button"
+            className="preview-tree-row preview-tree-folder"
+            style={{ paddingLeft: `${depth * 16}px` }}
+            onClick={() => toggleFolder(node.path)}
+          >
+            <span className="preview-tree-chevron" aria-hidden>
+              {isOpen ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+            </span>
+            <Folder className="size-3" />
+            <span>{node.name}</span>
+          </button>
+          {isOpen &&
+            node.children.map((child) => renderFileTree(child, depth + 1))}
+        </div>
+      );
+    }
+
+    return (
+      <button
+        key={node.path}
+        type="button"
+        className={`preview-tree-row preview-tree-file ${
+          node.path === activeFile?.path ? "is-active" : ""
+        }`}
+        style={{ paddingLeft: `${depth * 16 + 18}px` }}
+        onClick={() => setActiveFilePath(node.path)}
+      >
+        <FileText className="size-3" />
+        <span>{node.name}</span>
+      </button>
+    );
+  };
+
   const buildTreeLines = (paths: string[]) => {
     const root: Record<string, Record<string, any>> = {};
 
@@ -472,8 +599,15 @@ export default function Home() {
   };
 
   const formatFileTree = (currentFiles: VfsFile[]) => {
-    const treeLines = buildTreeLines(currentFiles.map((file) => file.path));
-    return ["my-app/", ...treeLines].join("\n");
+    const tree = buildFileTree(currentFiles);
+    const renderLines = (node: FileTreeNode, depth = 0): string[] => {
+      const indent = "  ".repeat(depth);
+      const prefix = depth === 0 ? "" : node.type === "folder" ? "├─ " : "└─ ";
+      const currentLine = `${indent}${prefix}${node.name}${node.type === "folder" ? "/" : ""}`;
+      return [currentLine, ...node.children.flatMap((child) => renderLines(child, depth + 1))];
+    };
+
+    return renderLines(tree).join("\n");
   };
 
   const getEntryPath = (filesMap: Record<string, string>) => {
@@ -863,6 +997,10 @@ if (rootElement) {
       setSelectedModel(models[0] ?? MODELS[0]);
     }
   }, [models, selectedModel]);
+
+  useEffect(() => {
+    setOpenFolders((current) => (current.includes("my-app") ? current : ["my-app", ...current]));
+  }, [files]);
 
   useEffect(() => {
     if (files.length === 0) return;
@@ -2402,9 +2540,9 @@ ${fileSnippets}`;
                         <div className="preview-code">
                           <aside className="preview-files">
                             <div className="preview-files-header">Files</div>
-                            <pre className="preview-tree">
-                              {formatFileTree(files)}
-                            </pre>
+                            <div className="preview-tree">
+                              {renderFileTree(buildFileTree(files))}
+                            </div>
                           </aside>
                           <div className="preview-code-editor">
                             <div className="preview-code-header">
