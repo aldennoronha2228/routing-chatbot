@@ -70,12 +70,14 @@ import {
 
 const MODELS = [
   "route/kimi-k2.5",
+  "route/glm-51",
+  "route/qwen3.5-9b",
+  "route/minimax-m2.5",
+  "route/deepseek-v4-pro",
   "route/glm-5-highspeed",
   "route/glm-5.1",
   "route/glm-5.1-precision",
-  "route/qwen3.5-9b",
   "route/qwen3.5-397b-a17b",
-  "route/minimax-m2.5",
 ];
 const PROJECTS_KEY = "routing_run_projects";
 const MAX_PROJECTS = 20;
