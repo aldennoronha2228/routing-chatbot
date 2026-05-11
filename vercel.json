@@ -1,6 +1,6 @@
 {
   "framework": null,
-  "installCommand": "pnpm install",
+  "installCommand": "corepack enable && corepack prepare pnpm@10.4.1 --activate && pnpm install --frozen-lockfile",
   "buildCommand": "pnpm run build:web",
   "builds": [
     { "src": "api/**/*.ts", "use": "@vercel/node" },
