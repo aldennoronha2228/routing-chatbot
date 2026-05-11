@@ -419,6 +419,16 @@ export default function Home() {
     }, {});
   };
 
+  const normalizeFilePathLabel = (value: string) => {
+    return value
+      .trim()
+      .replace(/^`+|`+$/g, "")
+      .replace(/\*+$/g, "")
+      .replace(/[).,;:]+$/g, "")
+      .replace(/^\.?\//, "")
+      .replace(/\s+/g, " ");
+  };
+
   const buildTreeLines = (paths: string[]) => {
     const root: Record<string, Record<string, any>> = {};
 
@@ -485,7 +495,7 @@ export default function Home() {
     const regex = /FILE:\s*([^\n]+)\n\s*```[^\n]*\n([\s\S]*?)```/g;
     let match: RegExpExecArray | null;
     while ((match = regex.exec(content)) !== null) {
-      const path = match[1]?.trim();
+      const path = normalizeFilePathLabel(match[1] ?? "");
       const code = match[2]?.trim() ?? "";
       if (path) {
         results.push({ path, content: code });
@@ -2395,21 +2405,6 @@ ${fileSnippets}`;
                             <pre className="preview-tree">
                               {formatFileTree(files)}
                             </pre>
-                            <div className="preview-files-list">
-                              {files.map((file) => (
-                                <button
-                                  key={file.path}
-                                  className={
-                                    file.path === activeFile?.path
-                                      ? "is-active"
-                                      : ""
-                                  }
-                                  onClick={() => setActiveFilePath(file.path)}
-                                >
-                                  {file.path}
-                                </button>
-                              ))}
-                            </div>
                           </aside>
                           <div className="preview-code-editor">
                             <div className="preview-code-header">
