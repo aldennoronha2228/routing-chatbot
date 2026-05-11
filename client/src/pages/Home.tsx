@@ -419,6 +419,53 @@ export default function Home() {
     }, {});
   };
 
+  const buildTreeLines = (paths: string[]) => {
+    const root: Record<string, Record<string, any>> = {};
+
+    const sortedPaths = [...paths].sort((a, b) => a.localeCompare(b));
+    for (const rawPath of sortedPaths) {
+      const parts = rawPath.replace(/^\/+/, "").split("/").filter(Boolean);
+      let node = root;
+      for (const part of parts) {
+        node[part] ??= {};
+        node = node[part];
+      }
+    }
+
+    const lines: string[] = [];
+    const walk = (
+      node: Record<string, any>,
+      prefix: string,
+      label?: string,
+      isLast = true
+    ) => {
+      if (label) {
+        lines.push(`${prefix}${isLast ? "└─" : "├─"} ${label}`);
+      }
+
+      const entries = Object.keys(node).sort((a, b) => {
+        const aIsLeaf = Object.keys(node[a] ?? {}).length === 0;
+        const bIsLeaf = Object.keys(node[b] ?? {}).length === 0;
+        if (aIsLeaf !== bIsLeaf) return aIsLeaf ? -1 : 1;
+        return a.localeCompare(b);
+      });
+
+      entries.forEach((entry, index) => {
+        const child = node[entry] ?? {};
+        const nextPrefix = `${prefix}${label ? (isLast ? "   " : "│  ") : ""}`;
+        walk(child, nextPrefix, entry, index === entries.length - 1);
+      });
+    };
+
+    walk(root, "", undefined, true);
+    return lines;
+  };
+
+  const formatFileTree = (currentFiles: VfsFile[]) => {
+    const treeLines = buildTreeLines(currentFiles.map((file) => file.path));
+    return ["my-app/", ...treeLines].join("\n");
+  };
+
   const getEntryPath = (filesMap: Record<string, string>) => {
     const candidates = [
       "/App.tsx",
@@ -1472,6 +1519,26 @@ FILE: path/to/file.ext
 - Do NOT include "..." placeholders.
 - Do NOT output plain HTML without a FILE block.
 
+STRUCTURE FORMAT (REQUIRED IN YOUR FIRST BLOCK):
+- Start with one fenced code block that contains ONLY the folder tree.
+- The tree must look like this style:
+  \`\`\`text
+  my-app/
+  ├─ app/
+  │  └─ page.tsx
+  ├─ components/
+  │  └─ ui/
+  │     ├─ card.tsx
+  │     ├─ spotlight.tsx
+  │     └─ splite.tsx
+  ├─ lib/
+  │  └─ utils.ts
+  ├─ tailwind.config.ts
+  └─ package.json
+  \`\`\`
+- Use tree characters and keep the structure compact.
+- After that fenced tree block, include the FILE blocks.
+
 QUALITY REQUIREMENTS:
 - Build a complete, working, modern responsive website.
 - Use semantic HTML and accessible structure.
@@ -2324,6 +2391,9 @@ ${fileSnippets}`;
                         <div className="preview-code">
                           <aside className="preview-files">
                             <div className="preview-files-header">Files</div>
+                            <pre className="preview-tree">
+                              {formatFileTree(files)}
+                            </pre>
                             <div className="preview-files-list">
                               {files.map((file) => (
                                 <button
