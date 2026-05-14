@@ -305,12 +305,28 @@ export default function Home() {
   const [previewReady, setPreviewReady] = useState(false);
   const [previewRefreshKey, setPreviewRefreshKey] = useState(0);
   const [openFolders, setOpenFolders] = useState<string[]>(["my-app"]);
+  const defaultApiKey = import.meta.env.VITE_ROUTING_RUN_API_KEY ?? "";
+  const hasDefaultApiKey = defaultApiKey.trim().length > 0;
+  const apiKeyModeStorageKey = "routing_run_use_default_key";
+  const initialUseDefaultApiKey = (() => {
+    if (typeof window === "undefined") return hasDefaultApiKey;
+    const stored = localStorage.getItem(apiKeyModeStorageKey);
+    if (stored === null) return hasDefaultApiKey;
+    return stored === "true";
+  })();
+  const [useDefaultApiKey, setUseDefaultApiKey] = useState(
+    initialUseDefaultApiKey
+  );
   const [apiKey, setApiKey] = useState(() => {
     if (typeof window !== "undefined") {
-      return localStorage.getItem("routing_run_api_key") || "";
+      const savedKey = localStorage.getItem("routing_run_api_key") || "";
+      return initialUseDefaultApiKey
+        ? defaultApiKey || savedKey
+        : savedKey || defaultApiKey || "";
     }
-    return "";
+    return defaultApiKey || "";
   });
+  const isUsingDefaultApiKey = hasDefaultApiKey && useDefaultApiKey;
   const [isStreaming, setIsStreaming] = useState(false);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
   const [pendingFileUpdates, setPendingFileUpdates] = useState<VfsFile[]>([]);
@@ -355,6 +371,7 @@ export default function Home() {
       recentMessages: messages,
       selectedModel,
       userPrompt: prompt,
+      preferTextOnly: true,
     });
 
   const flushPendingFileUpdates = () => {
@@ -711,6 +728,36 @@ export default function Home() {
     }
 
     return fallbackBlocks;
+  };
+
+  const parseEditBlocks = (content: string) => {
+    const results: Array<{ path: string; find: string; replace: string }> = [];
+    const regex = /EDIT:\s*([^\n]+)\n\s*FIND:\s*```[^\n]*\n([\s\S]*?)```\n\s*REPLACE:\s*```[^\n]*\n([\s\S]*?)```/g;
+    let match: RegExpExecArray | null;
+
+    while ((match = regex.exec(content)) !== null) {
+      const path = normalizeFilePathLabel(match[1] ?? "");
+      if (!path) continue;
+
+      const find = (match[2] ?? "").replace(/\r\n/g, "\n");
+      const replace = (match[3] ?? "").replace(/\r\n/g, "\n");
+      results.push({ path, find, replace });
+    }
+
+    return results;
+  };
+
+  const replaceFirstMatch = (source: string, find: string, replace: string) => {
+    const directIndex = source.indexOf(find);
+    if (directIndex >= 0) {
+      return `${source.slice(0, directIndex)}${replace}${source.slice(directIndex + find.length)}`;
+    }
+
+    const trimmedFind = find.trim();
+    if (!trimmedFind) return null;
+    const trimmedIndex = source.indexOf(trimmedFind);
+    if (trimmedIndex < 0) return null;
+    return `${source.slice(0, trimmedIndex)}${replace}${source.slice(trimmedIndex + trimmedFind.length)}`;
   };
 
   const PROJECT_INTENT_PATTERNS = [
@@ -1088,19 +1135,48 @@ if (rootElement) {
     if (!lastAssistant) return;
     if (lastArtifactAppliedMessageIdRef.current === lastAssistant.id) return;
     const fileBlocks = parseFileBlocks(lastAssistant.content);
-    if (fileBlocks.length === 0) return;
-
-    if (!shouldCreateArtifact(fileBlocks)) return;
+    const editBlocks = parseEditBlocks(lastAssistant.content);
+    if (fileBlocks.length === 0 && editBlocks.length === 0) return;
 
     flushPendingFileUpdates();
+    let appliedFiles: VfsFile[] = [];
     setFiles((prev) => {
       const map = new Map(prev.map((file) => [file.path, file]));
+
       fileBlocks.forEach((file) => {
         map.set(file.path, file);
       });
+
+      editBlocks.forEach((edit) => {
+        const current = map.get(edit.path);
+        if (!current) return;
+
+        const nextContent = replaceFirstMatch(current.content, edit.find, edit.replace);
+        if (nextContent === null || nextContent === current.content) return;
+
+        map.set(edit.path, {
+          path: edit.path,
+          content: nextContent,
+        });
+      });
+
+      const appliedPathSet = new Set<string>([
+        ...fileBlocks.map((file) => file.path),
+        ...editBlocks.map((edit) => edit.path),
+      ]);
+      appliedFiles = Array.from(appliedPathSet)
+        .map((path) => map.get(path))
+        .filter((file): file is VfsFile => Boolean(file));
+
       return Array.from(map.values());
     });
-    setActiveFilePath(fileBlocks[0].path);
+
+    if (appliedFiles.length === 0) return;
+
+    setActiveFilePath(appliedFiles[0].path);
+
+    if (!shouldCreateArtifact(appliedFiles)) return;
+
     setPreviewReady(true);
     setPreviewTab("preview");
     setConversationMode("project");
@@ -1729,49 +1805,36 @@ if (rootElement) {
       })
       .join("\n\n");
 
-    return `You are an AI website builder. Update the project incrementally and return code in a strict machine-readable format.
+    return `You are an AI code editor agent. Update the project incrementally with surgical edits only.
 
 STRICT RESPONSE CONTRACT (MANDATORY):
-- Return ONLY FILE blocks. No intro, no explanation, no headings, no markdown text outside file blocks.
-- Every block must follow this exact format:
-FILE: path/to/file.ext
+- Return ONLY machine-readable edit blocks. No intro, no explanation, no headings.
+- For existing files, use this exact format:
+EDIT: path/to/file.ext
+FIND:
+\`\`\`text
+<exact snippet from current file>
+\`\`\`
+REPLACE:
+\`\`\`text
+<updated snippet>
+\`\`\`
+- Prefer the smallest possible snippet that safely applies the fix.
+- Do NOT rewrite full files unless explicitly asked.
+- Use FILE blocks only when creating a brand-new file:
+FILE: path/to/new-file.ext
 \`\`\`ext
 ...full file content...
 \`\`\`
-- You may include multiple FILE blocks.
-- If you modify a file, return the FULL updated file.
-- If you add a file, include it fully.
-- Do NOT include "..." placeholders.
-- Do NOT output plain HTML without a FILE block.
-
-STRUCTURE FORMAT (REQUIRED IN YOUR FIRST BLOCK):
-- Start with one fenced code block that contains ONLY the folder tree.
-- The tree must look like this style:
-  \`\`\`text
-  my-app/
-  ├─ app/
-  │  └─ page.tsx
-  ├─ components/
-  │  └─ ui/
-  │     ├─ card.tsx
-  │     ├─ spotlight.tsx
-  │     └─ splite.tsx
-  ├─ lib/
-  │  └─ utils.ts
-  ├─ tailwind.config.ts
-  └─ package.json
-  \`\`\`
-- Use tree characters and keep the structure compact.
-- After that fenced tree block, include the FILE blocks.
+- Do NOT include placeholders.
 
 QUALITY REQUIREMENTS:
-- Build a complete, working, modern responsive website.
-- Use semantic HTML and accessible structure.
-- Ensure mobile-first layout (phone/tablet/desktop).
-- Keep styling consistent and production-ready.
-- If React/TSX is used, output valid TSX.
+- If the user asks for UI, start with basic text layout and minimal structure first.
+- Do not build a full polished UI on the first pass unless explicitly requested.
+- Prefer plain text, simple components, and incremental improvements.
+- Keep behavior focused on the requested change only.
 
-If uncertain, still output best-effort valid FILE blocks only.
+If uncertain, still output best-effort valid EDIT blocks.
 
 Current files:
 ${fileList}
@@ -1790,8 +1853,8 @@ ${fileSnippets}`;
       })
       .join("\n\n");
 
-    return `You are a senior debugging assistant.
-Goal: diagnose and FIX the reported bug/error with concrete changes.
+    return `You are a senior debugging assistant and code editor agent.
+  Goal: diagnose and FIX the reported bug/error with concrete changes.
 
 Response format (mandatory):
 1) ROOT CAUSE
@@ -1803,11 +1866,19 @@ Rules:
 - Be specific to the reported error/bug.
 - Do not generate a new unrelated website.
 - Prefer minimal targeted fixes over rewrites.
-- In CODE FIXES, include complete FILE blocks for changed files:
-FILE: path/to/file.ext
-\`\`\`ext
-...full updated file...
-\`\`\`
+  - In CODE FIXES, for existing files use EDIT blocks only:
+  EDIT: path/to/file.ext
+  FIND:
+  \`\`\`text
+  <exact snippet from current file>
+  \`\`\`
+  REPLACE:
+  \`\`\`text
+  <updated snippet>
+  \`\`\`
+  - Keep edits as small as possible.
+  - Use FILE blocks only for brand-new files.
+  - If the issue is about UI generation, fix only the minimum text or structure needed first.
 - If uncertain, state assumptions and still provide the best fix.
 
 Current project files:
@@ -1890,8 +1961,28 @@ ${fileSnippets}`;
       return;
     }
     localStorage.setItem("routing_run_api_key", newKey);
+    localStorage.setItem(apiKeyModeStorageKey, "false");
+    setUseDefaultApiKey(false);
     setApiKey(newKey);
     toast.success("API key saved");
+  };
+
+  const handleSwitchApiKey = () => {
+    if (!hasDefaultApiKey) return;
+
+    if (isUsingDefaultApiKey) {
+      const savedKey = localStorage.getItem("routing_run_api_key") || "";
+      localStorage.setItem(apiKeyModeStorageKey, "false");
+      setUseDefaultApiKey(false);
+      setApiKey(savedKey);
+      toast.success(savedKey ? "Switched to saved key" : "Switched to empty key");
+      return;
+    }
+
+    localStorage.setItem(apiKeyModeStorageKey, "true");
+    setUseDefaultApiKey(true);
+    setApiKey(defaultApiKey);
+    toast.success("Switched to default key");
   };
 
   const handleTestConnection = async (testKey: string) => {
@@ -1978,7 +2069,7 @@ ${fileSnippets}`;
                   <Sparkles className="size-4 text-primary" />
                 </div>
                 <div className="flex flex-col group-data-[collapsible=icon]:hidden">
-                  <span className="text-sm font-semibold tracking-tight">Routing.run</span>
+                  <span className="text-sm font-semibold tracking-tight">NOVA Ai</span>
                   <span className="text-xs text-muted-foreground">AI Workspace</span>
                 </div>
               </div>
@@ -2072,13 +2163,22 @@ ${fileSnippets}`;
                       id="api-key"
                       type="password"
                       placeholder="rk_..."
-                      defaultValue={apiKey}
+                      value={apiKey}
                       onChange={(e) => setApiKey(e.target.value)}
                     />
                     <p className="mt-1 text-xs text-muted-foreground">
                       Your API key is stored locally in your browser
                     </p>
                   </div>
+                  {hasDefaultApiKey && (
+                    <Button
+                      variant="secondary"
+                      onClick={handleSwitchApiKey}
+                      className="w-full"
+                    >
+                      {isUsingDefaultApiKey ? "Use saved key" : "Use default key"}
+                    </Button>
+                  )}
                   <div className="flex gap-2">
                     <Button
                       onClick={() => handleSaveApiKey(apiKey)}

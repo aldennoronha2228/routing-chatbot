@@ -27,6 +27,7 @@ export interface AiIdePromptContext {
   recentMessages?: AiIdeMessageContext[];
   selectedModel?: string | null;
   userPrompt?: string | null;
+  preferTextOnly?: boolean | null;
 }
 
 export interface AiRequestTuning {
@@ -253,16 +254,25 @@ export const buildAiIdeSystemPrompt = (context: AiIdePromptContext) => {
   const artifact = context.activeArtifact;
   const mode = context.mode;
 
-  const responseContract = `STRUCTURED FILE OUTPUT CONTRACT:
-- When code changes are needed, return ONLY FILE blocks.
-- Start with exactly one fenced tree block that shows the full project structure.
-- Then emit one or more FILE blocks in this format:
+  const responseContract = `STRUCTURED PATCH OUTPUT CONTRACT:
+- Prefer minimal edit blocks over full-file rewrites.
+- For edits to existing files, emit one or more EDIT blocks:
+  EDIT: path/to/file.ext
+  FIND:
+  \`\`\`text
+  <exact existing snippet>
+  \`\`\`
+  REPLACE:
+  \`\`\`text
+  <updated snippet>
+  \`\`\`
+- Use FILE blocks only when creating a new file or when an edit block is not practical:
   FILE: path/to/file.ext
   \`\`\`tsx
-  ...full updated file...
+  ...full file content...
   \`\`\`
-- Return full file contents for every changed file.
-- Do not use placeholders, partial diffs, or prose outside FILE blocks.`;
+- Keep changes small and localized.
+- Do not output prose that says you changed files; output the edit blocks directly when editing.`;
 
   const workflow = mode === "debug"
     ? `BUG-FIXING WORKFLOW:
@@ -285,6 +295,7 @@ export const buildAiIdeSystemPrompt = (context: AiIdePromptContext) => {
     `Artifact: ${artifact ? `${artifact.title || "Untitled artifact"} | ${artifact.subtitle || "No subtitle"} | open=${artifact.previewOpen} | ready=${artifact.previewReady}` : "none"}`,
     `Recent edits:\n${recentEdits}`,
     `Project tree:\n${projectTree}`,
+    `Prefer text-only output: ${context.preferTextOnly ? "yes" : "no"}`,
     `Relevant files:\n${relevantFiles.length > 0
       ? relevantFiles.map((file) => `FILE: ${file.path}\n\n${trimSnippet(file.content)}`).join("\n\n")
       : "- none"}`,
@@ -304,6 +315,9 @@ export const buildAiIdeSystemPrompt = (context: AiIdePromptContext) => {
     `- If the user reports a bug, reason from the current project state and explain the root cause briefly.`,
     `- If the user asks for code, patch the necessary files and keep the preview in sync mentally.`,
     `- When the answer involves changes, use the structured output contract below.`,
+    context.preferTextOnly
+      ? `- Preference: produce minimal text-only placeholders and simple text-renderable outputs instead of building full UI components unless the user explicitly requests full UI.`
+      : null,
     ``,
     responseContract,
     ``,
